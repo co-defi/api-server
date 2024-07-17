@@ -41,16 +41,16 @@ to quickly create a Cobra application.`,
 		security, _ := cmd.Flags().GetString("security")
 		strategy, _ := cmd.Flags().GetString("strategy")
 		quantum, _ := cmd.Flags().GetInt("quantum")
-		lossLimit, _ := cmd.Flags().GetFloat64("loss-limit")
+		LossProtection, _ := cmd.Flags().GetFloat64("loss-limit")
 		timeFrame, _ := cmd.Flags().GetInt("time-frame")
 		err = app.Commands.CreateNewPlan.Handle(cmd.Context(), commands.CreateNewPlan{
-			Id:        id,
-			Assets:    strings.Split(assets, ","),
-			Security:  domain.Security(security),
-			Strategy:  domain.Strategy(strategy),
-			Quantum:   quantum,
-			LossLimit: lossLimit,
-			TimeFrame: timeFrame,
+			Id:             id,
+			Assets:         strings.Split(assets, ","),
+			Security:       domain.MultiSigWalletSecurity(security),
+			Strategy:       domain.ProfitSharingStrategy(strategy),
+			Quantum:        quantum,
+			LossProtection: LossProtection,
+			TimeFrame:      timeFrame,
 		})
 		if err != nil {
 			logger.Fatal().Err(err).Msg("failed to create new plan")

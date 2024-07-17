@@ -6,6 +6,8 @@ import (
 	"github.com/hallgren/eventsourcing"
 )
 
+const EmptyAddress = ""
+
 // Pair is the aggregate root for a pair of participates going through a liquidity providing process for a pair of crypto assets.
 // We create a Pair for an individual participant for a plan with validated account address that has more than the required quantum of assets in $.
 // After that the Pair is thrown in a queue or pool of Pairs with the ShareValue same as the quantum of the selected plan.
@@ -13,63 +15,164 @@ import (
 // The participants then go through creating a shared wallet with the required security method and series of steps for the liquidity providing process.
 type Pair struct {
 	eventsourcing.AggregateRoot
-	Assets              []string         `json:"assets,omitempty"`
-	ParticipantsAddress []string         `json:"participants_address,omitempty"`
-	ShareValue          int              `json:"share_value,omitempty"`
-	Wallet              *MultisigWallet  `json:"wallet,omitempty"`
-	Step1               *Asset1Assurance `json:"step1,omitempty"`
-	Step2               *Asset1Transfer  `json:"step2,omitempty"`
-	Step3               *Asset2Assurance `json:"step3,omitempty"`
-	Step4               *Asset2Transfer  `json:"step4,omitempty"`
-	Step5               *LP              `json:"step5,omitempty"`
-	Deadline            time.Time        `json:"deadline,omitempty"`
-	AutoWithdrawal      *SignedTx        `json:"auto_withdrawal,omitempty"`
+	Status                PairStatus             `json:"status,omitempty"`
+	Assets                []Asset                `json:"assets,omitempty"`
+	ParticipantsAddress   map[Asset]Address      `json:"participants_address,omitempty"`
+	ShareValue            int                    `json:"share_value,omitempty"`
+	InvestingPeriod       int                    `json:"investing_period,omitempty"`
+	WalletSecurity        MultiSigWalletSecurity `json:"wallet_security,omitempty"`
+	ProfitSharingStrategy ProfitSharingStrategy  `json:"profit_sharing_strategy,omitempty"`
+	LossProtection        float64                `json:"loss_protection,omitempty"`
+	Wallet                *MultisigWallet        `json:"wallet,omitempty"`
+	Assurances            map[Asset][]SignedTx   `json:"assurances,omitempty"`
+	Deposits              map[Asset]TxHash       `json:"deposits,omitempty"`
+	WithdrawTx            *SignedTx              `json:"withdraw_tx,omitempty"`
+	LP                    map[Asset]TxHash       `json:"lp,omitempty"`
+	Deadline              time.Time              `json:"deadline,omitempty"`
+	WithdrawnTx           *TxHash                `json:"withdrawn_tx,omitempty"`
 }
 
 // Register implements aggregate.Register
-func (p *Pair) Register(r eventsourcing.RegisterFunc) {}
+func (p *Pair) Register(r eventsourcing.RegisterFunc) {
+	r(
+		&PairCreated{},
+		&PairMatched{},
+		&WalletAddressConfirmed{},
+		&AssetAssuranceSigned{},
+		&AssetDeposited{},
+		&WithdrawTxSigned{},
+		&LPDone{},
+		&Withdrawn{},
+	)
+}
 
 // Transition implements aggregate.Transition
-func (p *Pair) Transition(event eventsourcing.Event) {}
+func (p *Pair) Transition(event eventsourcing.Event) {
+	switch e := event.Data().(type) {
+	case *PairCreated:
+		p.applyPairCreated(e)
+	case *PairStatusChanged:
+		p.applyPairStatusChanged(e)
+	case *PairMatched:
+		p.applyPairMatched(e)
+	case *WalletAddressConfirmed:
+		p.applyWalletAddressConfirmed(e)
+	case *AssetAssuranceSigned:
+		p.applyAssetAssuranceSigned(e)
+	case *AssetDeposited:
+		p.applyAssetDeposited(e)
+	case *WithdrawTxSigned:
+		p.applyWithdrawTxSigned(e)
+	case *LPDone:
+		p.applyLPDone(e)
+	case *Withdrawn:
+		p.applyWithdrawn(e)
+	}
+}
+
+func (p *Pair) applyPairCreated(e *PairCreated) {
+	p.Assets = []Asset{e.ParticipantAsset, e.SecondaryAsset}
+	p.ParticipantsAddress = map[Asset]Address{e.ParticipantAsset: e.ParticipantAddress}
+	p.ShareValue = e.ShareValue
+	p.InvestingPeriod = e.InvestingPeriod
+	p.WalletSecurity = e.WalletSecurity
+	p.ProfitSharingStrategy = e.ProfitSharingStrategy
+	p.LossProtection = e.LossProtection
+}
+
+func (p *Pair) applyPairStatusChanged(e *PairStatusChanged) {
+	p.Status = e.Status
+}
+
+func (p *Pair) applyPairMatched(e *PairMatched) {
+	p.ParticipantsAddress[p.Assets[1]] = e.ParticipantAddress
+}
+
+func (p *Pair) applyWalletAddressConfirmed(e *WalletAddressConfirmed) {
+	if p.Wallet == nil {
+		p.Wallet = &MultisigWallet{
+			Addresses: e.WalletAddresses,
+		}
+	}
+
+	if p.Wallet.areAddressesEqual(e.WalletAddresses) {
+		p.Wallet.PublicKeys[e.ParticipantAsset] = e.PublicKey
+	}
+}
+
+func (p *Pair) applyAssetAssuranceSigned(e *AssetAssuranceSigned) {
+	if p.Assurances == nil {
+		p.Assurances = make(map[Asset][]SignedTx)
+	}
+
+	if _, ok := p.Assurances[e.Asset]; !ok {
+		p.Assurances[e.Asset] = make([]SignedTx, 0)
+	}
+	p.Assurances[e.Asset] = append(p.Assurances[e.Asset], e.Tx)
+}
+
+func (p *Pair) applyAssetDeposited(e *AssetDeposited) {
+	if p.Deposits == nil {
+		p.Deposits = make(map[Asset]TxHash)
+	}
+
+	p.Deposits[e.Asset] = e.TxHash
+}
+
+func (p *Pair) applyWithdrawTxSigned(e *WithdrawTxSigned) {
+	p.WithdrawTx = &e.Tx
+}
+
+func (p *Pair) applyLPDone(e *LPDone) {
+	if p.LP == nil {
+		p.LP = make(map[Asset]TxHash)
+	}
+
+	p.LP[e.Asset] = e.TxHash
+
+	p.Deadline = e.Deadline
+}
+
+func (p *Pair) applyWithdrawn(e *Withdrawn) {
+	p.WithdrawnTx = &e.TxHash
+}
+
+// PairStatus is the type for the status of the pair
+type PairStatus string
+
+const (
+	PairStatusWaiting            PairStatus = "waiting"
+	PairStatusWalletConformation PairStatus = "wallet_conformation"
+	PairStatusWalledConfirmed    PairStatus = "wallet_confirmed"
+	PairStatusAssurance          PairStatus = "assurance"
+	PairStatusDeposit            PairStatus = "deposit"
+	PairStatusPreSignWithdrawal  PairStatus = "pre_sign_withdrawal"
+	PairStatusLP                 PairStatus = "lp"
+	PairStatusWithdrawn          PairStatus = "withdrawn"
+	PairStatusInvalid            PairStatus = "invalid"
+)
+
+// Asset is the type for the assets in the pair
+type Asset string
+
+// Address is the type for the participant's address
+type Address string
 
 // MultisigWallet is the shared wallet for the pair of participants
 type MultisigWallet struct {
-	Security  Security `json:"security,omitempty"`
-	Addresses []string `json:"addresses,omitempty"`
+	PublicKeys map[Asset]string  `json:"public_keys,omitempty"`
+	Addresses  map[Asset]Address `json:"addresses,omitempty"`
 	// Other fields for Vaultisig internal stuff...
 }
 
-// Asset1Assurance is the first step of the liquidity providing process
-// where the both participants sign a transaction to transfer the ShareValue amount of Assets[0] to the first participant's address with nonce 0
-// in case of a dispute.
-type Asset1Assurance struct {
-	Tx SignedTx `json:"tx,omitempty"`
-}
+func (w *MultisigWallet) areAddressesEqual(addresses map[Asset]Address) bool {
+	for asset, address := range addresses {
+		if w.Addresses[asset] != address {
+			return false
+		}
+	}
 
-// Asset1Transfer is the second step of the liquidity providing process
-// where the first participant transfers the ShareValue amount of Assets[0] to the shared wallet.
-type Asset1Transfer struct {
-	TxHash string `json:"tx_hash,omitempty"`
-}
-
-// Asset2Assurance is the third step of the liquidity providing process
-// where the both participants sign a transaction to transfer the ShareValue amount of Assets[1] to the second participant's address with nonce 1
-// in case of a dispute.
-type Asset2Assurance struct {
-	Tx SignedTx `json:"tx,omitempty"`
-}
-
-// Asset2Transfer is the fourth step of the liquidity providing process
-// where the second participant transfers the ShareValue amount of Assets[1] to the shared wallet.
-type Asset2Transfer struct {
-	TxHash string `json:"tx_hash,omitempty"`
-}
-
-// LP is the fifth step of the liquidity providing process
-// where both participants sign a transaction to LP the assets in the desired pool.
-type LP struct {
-	Asset1TxHash string `json:"asset1_tx_hash,omitempty"`
-	Asset2TxHash string `json:"asset2_tx_hash,omitempty"`
+	return true
 }
 
 // SignedTx is the type for the transactions that are signed by the participants
@@ -77,4 +180,65 @@ type SignedTx struct {
 	Nonce     int    `json:"nonce,omitempty"`
 	Tx        []byte `json:"tx,omitempty"`
 	Signature []byte `json:"signature,omitempty"`
+}
+
+// TxHash is the type for the transaction hash
+type TxHash string
+
+// PairCreated is the event for creating a new pair for the first time.
+type PairCreated struct {
+	ParticipantAsset      Asset                  `json:"participant_asset,omitempty"`
+	ParticipantAddress    Address                `json:"participant_address,omitempty"`
+	SecondaryAsset        Asset                  `json:"secondary_asset,omitempty"`
+	ShareValue            int                    `json:"share_value,omitempty"`
+	InvestingPeriod       int                    `json:"investing_period,omitempty"`
+	WalletSecurity        MultiSigWalletSecurity `json:"wallet_security,omitempty"`
+	ProfitSharingStrategy ProfitSharingStrategy  `json:"profit_sharing_strategy,omitempty"`
+	LossProtection        float64                `json:"loss_protection,omitempty"`
+}
+
+// PairStatusChanged is the event for changing the status of the pair.
+type PairStatusChanged struct {
+	Status PairStatus `json:"status,omitempty"`
+}
+
+// PairMatched is the event for matching a pair with another participant.
+type PairMatched struct {
+	ParticipantAddress Address `json:"participant_address,omitempty"`
+}
+
+// WalletAddressConfirmed is the event for confirming the shared wallet's addresses by the participants.
+type WalletAddressConfirmed struct {
+	ParticipantAsset Asset             `json:"participant,omitempty"`
+	PublicKey        string            `json:"public_key,omitempty"`
+	WalletAddresses  map[Asset]Address `json:"addresses,omitempty"`
+}
+
+// AssetAssuranceSigned is the event for signing the assurance transaction for the asset.
+type AssetAssuranceSigned struct {
+	Asset Asset    `json:"asset,omitempty"`
+	Tx    SignedTx `json:"tx,omitempty"`
+}
+
+// AssetDeposited is the event for signing the transfer transaction for the asset.
+type AssetDeposited struct {
+	Asset  Asset  `json:"asset,omitempty"`
+	TxHash TxHash `json:"tx_hash,omitempty"`
+}
+
+// WithdrawTxSigned is the event for signing the withdrawal transaction.
+type WithdrawTxSigned struct {
+	Tx SignedTx `json:"tx,omitempty"`
+}
+
+// LPDone is the event for when the liquidity providing is done.
+type LPDone struct {
+	Asset    Asset     `json:"asset,omitempty"`
+	TxHash   TxHash    `json:"tx_hash,omitempty"`
+	Deadline time.Time `json:"deadline,omitempty"`
+}
+
+// Withdrawn is the event for when the withdrawal is done.
+type Withdrawn struct {
+	TxHash TxHash `json:"tx_hash,omitempty"`
 }

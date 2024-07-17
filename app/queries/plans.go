@@ -39,7 +39,7 @@ func (pq *PlansQuery) createTable() error {
 		security TEXT,
 		strategy TEXT,
 		quantum INTEGER,
-		loss_limit REAL,
+		loss_protection REAL,
 		time_frame INTEGER
 	);`)
 	return err
@@ -62,19 +62,19 @@ func (pq *PlansQuery) Callback(event eventsourcing.Event) error {
 }
 
 func (pq *PlansQuery) insertPlan(id string, e *domain.PlanCreated) error {
-	_, err := pq.Exec(`insert into plans_query (id, assets, security, strategy, quantum, loss_limit, time_frame) values (?, ?, ?, ?, ?, ?, ?);`,
-		id, strings.Join(e.Assets, ","), e.Security, e.Strategy, e.Quantum, e.LossLimit, e.TimeFrame)
+	_, err := pq.Exec(`insert into plans_query (id, assets, security, strategy, quantum, loss_protection, time_frame) values (?, ?, ?, ?, ?, ?, ?);`,
+		id, strings.Join(e.Assets, ","), e.Security, e.Strategy, e.Quantum, e.LossProtection, e.TimeFrame)
 	return err
 }
 
 type Plan struct {
-	Id        string          `json:"id,omitempty"`
-	Assets    []string        `json:"assets,omitempty"`
-	Security  domain.Security `json:"security,omitempty"`
-	Strategy  domain.Strategy `json:"strategy,omitempty"`
-	Quantum   int             `json:"quantum,omitempty"`
-	LossLimit float64         `json:"loss_limit,omitempty"`
-	TimeFrame int             `json:"time_frame,omitempty"`
+	Id             string                        `json:"id,omitempty"`
+	Assets         []string                      `json:"assets,omitempty"`
+	Security       domain.MultiSigWalletSecurity `json:"security,omitempty"`
+	Strategy       domain.ProfitSharingStrategy  `json:"strategy,omitempty"`
+	Quantum        int                           `json:"quantum,omitempty"`
+	LossProtection float64                       `json:"loss_protection,omitempty"`
+	TimeFrame      int                           `json:"time_frame,omitempty"`
 }
 
 // All returns all plans
@@ -88,25 +88,25 @@ func (pq *PlansQuery) All() ([]Plan, error) {
 	plans := []Plan{}
 	for rows.Next() {
 		var (
-			id        string
-			assets    string
-			security  string
-			strategy  string
-			quantum   int
-			lossLimit float64
-			timeFrame int
+			id             string
+			assets         string
+			security       string
+			strategy       string
+			quantum        int
+			LossProtection float64
+			timeFrame      int
 		)
-		if err := rows.Scan(&id, &assets, &security, &strategy, &quantum, &lossLimit, &timeFrame); err != nil {
+		if err := rows.Scan(&id, &assets, &security, &strategy, &quantum, &LossProtection, &timeFrame); err != nil {
 			return nil, fmt.Errorf("failed to scan plan: %w", err)
 		}
 		plans = append(plans, Plan{
-			Id:        id,
-			Assets:    strings.Split(assets, ","),
-			Security:  domain.Security(security),
-			Strategy:  domain.Strategy(strategy),
-			Quantum:   quantum,
-			LossLimit: lossLimit,
-			TimeFrame: timeFrame,
+			Id:             id,
+			Assets:         strings.Split(assets, ","),
+			Security:       domain.MultiSigWalletSecurity(security),
+			Strategy:       domain.ProfitSharingStrategy(strategy),
+			Quantum:        quantum,
+			LossProtection: LossProtection,
+			TimeFrame:      timeFrame,
 		})
 	}
 
