@@ -44,13 +44,39 @@ func (s *HttpServer) registerRoutes() {
 	s.echo.GET("/plans", s.getPlans)
 }
 
+type Plan struct {
+	Id             string   `json:"id,omitempty"`
+	Name           string   `json:"name,omitempty"`
+	Assets         []string `json:"assets,omitempty"`
+	Security       string   `json:"security,omitempty"`
+	Strategy       string   `json:"strategy,omitempty"`
+	Quantum        int      `json:"quantum,omitempty"`
+	LossProtection float64  `json:"loss_protection,omitempty"`
+	TimeFrame      int      `json:"time_frame,omitempty"`
+	APR            float64  `json:"APR,omitempty"`
+}
+
 func (s *HttpServer) getPlans(c echo.Context) error {
 	plans, err := s.app.Queries.Plans.All()
 	if err != nil {
 		return err
 	}
+	response := make([]Plan, len(plans))
+	for i, plan := range plans {
+		response[i] = Plan{
+			Id:             plan.Id,
+			Name:           "Basic Low Risk Plan", // TODO: "Basic Low Risk Plan" is a hardcoded value, it should be fetched from the database
+			Assets:         plan.Assets,
+			Security:       string(plan.Security),
+			Strategy:       string(plan.Strategy),
+			Quantum:        plan.Quantum,
+			LossProtection: plan.LossProtection,
+			TimeFrame:      plan.TimeFrame,
+			APR:            0.15,
+		}
+	}
 
-	return c.JSON(http.StatusOK, plans)
+	return c.JSON(http.StatusOK, response)
 }
 
 func (s *HttpServer) handleError(err error, c echo.Context) {
