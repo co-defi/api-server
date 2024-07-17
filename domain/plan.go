@@ -9,12 +9,12 @@ import (
 // a strategy for profit splitting, quantum of each asset's share in $, agreed loss limit and a time frame (in weeks) for the plan.
 type Plan struct {
 	eventsourcing.AggregateRoot
-	Assets         []string               `json:"assets,omitempty"`
-	Security       MultiSigWalletSecurity `json:"security,omitempty"`
-	Strategy       ProfitSharingStrategy  `json:"strategy,omitempty"`
-	Quantum        int                    `json:"quantum,omitempty"`
-	LossProtection float64                `json:"loss_protection,omitempty"`
-	TimeFrame      int                    `json:"time_frame,omitempty"`
+	Assets          []string               `json:"assets,omitempty"`
+	Security        MultiSigWalletSecurity `json:"security,omitempty"`
+	Strategy        ProfitSharingStrategy  `json:"strategy,omitempty"`
+	Quantum         int                    `json:"quantum,omitempty"`
+	LossProtection  float64                `json:"loss_protection,omitempty"`
+	InvestingPeriod int                    `json:"investing_period,omitempty"`
 }
 
 // Register implements aggregate.Register
@@ -31,7 +31,7 @@ func (p *Plan) Transition(event eventsourcing.Event) {
 		p.Strategy = e.Strategy
 		p.Quantum = e.Quantum
 		p.LossProtection = e.LossProtection
-		p.TimeFrame = e.TimeFrame
+		p.InvestingPeriod = e.InvestingPeriod
 	}
 }
 
@@ -57,10 +57,10 @@ const (
 
 // PlanCreated is the event for creating a new plan for the first time.
 type PlanCreated struct {
-	Assets         []string               `json:"assets,omitempty"`
-	Security       MultiSigWalletSecurity `json:"security,omitempty"`
-	Strategy       ProfitSharingStrategy  `json:"strategy,omitempty"`
-	Quantum        int                    `json:"quantum,omitempty"`
-	LossProtection float64                `json:"loss_protection,omitempty"`
-	TimeFrame      int                    `json:"time_frame,omitempty"`
+	Assets          []string               `json:"assets,omitempty"`
+	Security        MultiSigWalletSecurity `json:"security,omitempty"`
+	Strategy        ProfitSharingStrategy  `json:"strategy,omitempty"`
+	Quantum         int                    `json:"quantum,omitempty"`
+	LossProtection  float64                `json:"loss_protection,omitempty"`
+	InvestingPeriod int                    `json:"investing_period,omitempty"`
 }

@@ -62,8 +62,8 @@ func (pq *PlansQuery) Callback(event eventsourcing.Event) error {
 }
 
 func (pq *PlansQuery) insertPlan(id string, e *domain.PlanCreated) error {
-	_, err := pq.Exec(`insert into plans_query (id, assets, security, strategy, quantum, loss_protection, time_frame) values (?, ?, ?, ?, ?, ?, ?);`,
-		id, strings.Join(e.Assets, ","), e.Security, e.Strategy, e.Quantum, e.LossProtection, e.TimeFrame)
+	_, err := pq.Exec(`insert into plans_query (id, assets, security, strategy, quantum, loss_protection, investing_period) values (?, ?, ?, ?, ?, ?, ?);`,
+		id, strings.Join(e.Assets, ","), e.Security, e.Strategy, e.Quantum, e.LossProtection, e.InvestingPeriod)
 	return err
 }
 

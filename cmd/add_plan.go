@@ -42,15 +42,15 @@ to quickly create a Cobra application.`,
 		strategy, _ := cmd.Flags().GetString("strategy")
 		quantum, _ := cmd.Flags().GetInt("quantum")
 		LossProtection, _ := cmd.Flags().GetFloat64("loss-limit")
-		timeFrame, _ := cmd.Flags().GetInt("time-frame")
+		investingPeriod, _ := cmd.Flags().GetInt("investing-period")
 		err = app.Commands.CreateNewPlan.Handle(cmd.Context(), commands.CreateNewPlan{
-			Id:             id,
-			Assets:         strings.Split(assets, ","),
-			Security:       domain.MultiSigWalletSecurity(security),
-			Strategy:       domain.ProfitSharingStrategy(strategy),
-			Quantum:        quantum,
-			LossProtection: LossProtection,
-			TimeFrame:      timeFrame,
+			Id:              id,
+			Assets:          strings.Split(assets, ","),
+			Security:        domain.MultiSigWalletSecurity(security),
+			Strategy:        domain.ProfitSharingStrategy(strategy),
+			Quantum:         quantum,
+			LossProtection:  LossProtection,
+			InvestingPeriod: investingPeriod,
 		})
 		if err != nil {
 			logger.Fatal().Err(err).Msg("failed to create new plan")
@@ -68,5 +68,5 @@ func init() {
 	addPlanCmd.Flags().StringP("strategy", "t", "equal_share", "Strategy to use (equal-share, custom)")
 	addPlanCmd.Flags().IntP("quantum", "q", 100, "Quantum value of each share measured in $")
 	addPlanCmd.Flags().Float64P("loss-limit", "l", 0.1, "Loss limit")
-	addPlanCmd.Flags().IntP("time-frame", "f", 1, "Time frame measured in weeks")
+	addPlanCmd.Flags().IntP("investing-period", "i", 1, "Investing period in weeks")
 }
