@@ -35,7 +35,8 @@ func NewApplication(db *sql.DB) (*Application, error) {
 
 	app := Application{
 		Commands: Commands{
-			CreateNewPlan: commands.NewCreateNewPlanHandler(repo),
+			CreateNewPlan:     commands.NewCreateNewPlanHandler(repo),
+			CreateOrMatchPair: commands.NewCreateOrMatchPairHandler(repo, queries.Pairs),
 		},
 		Queries: queries,
 		logger:  zerolog.Nop(),
@@ -114,11 +115,13 @@ func (app *Application) StopProjections() {
 }
 
 type Commands struct {
-	CreateNewPlan commands.CreateNewPlanHandler
+	CreateNewPlan     commands.CreateNewPlanHandler
+	CreateOrMatchPair commands.CreateOrMatchPairHandler
 }
 
 type Queries struct {
 	Plans *queries.PlansQuery
+	Pairs *queries.PairsQuery
 }
 
 func newQueries(db *sql.DB, store *sqles.SQL) (Queries, error) {
@@ -127,7 +130,13 @@ func newQueries(db *sql.DB, store *sqles.SQL) (Queries, error) {
 		return Queries{}, fmt.Errorf("failed to create plans query: %w", err)
 	}
 
+	pairs, err := queries.NewPairsQuery(db, store)
+	if err != nil {
+		return Queries{}, fmt.Errorf("failed to create pairs query: %w", err)
+	}
+
 	return Queries{
 		Plans: plans,
+		Pairs: pairs,
 	}, nil
 }

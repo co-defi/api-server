@@ -1,9 +1,10 @@
 package ports
 
 import (
-	"github.com/labstack/echo/v4/middleware"
 	"net/http"
 	"strings"
+
+	"github.com/labstack/echo/v4/middleware"
 
 	"github.com/co-defi/api-server/app"
 	"github.com/co-defi/api-server/common"
@@ -57,7 +58,7 @@ type Plan struct {
 }
 
 func (s *HttpServer) getPlans(c echo.Context) error {
-	plans, err := s.app.Queries.Plans.All()
+	plans, err := s.app.Queries.Plans.All(c.Request().Context())
 	if err != nil {
 		return err
 	}

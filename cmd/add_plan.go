@@ -7,7 +7,6 @@ import (
 	"github.com/co-defi/api-server/app"
 	"github.com/co-defi/api-server/app/commands"
 	"github.com/co-defi/api-server/domain"
-	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 )
 
@@ -36,15 +35,13 @@ to quickly create a Cobra application.`,
 		}
 		app.WithLogger(logger)
 
-		id := uuid.New()
 		assets, _ := cmd.Flags().GetString("assets")
 		security, _ := cmd.Flags().GetString("security")
 		strategy, _ := cmd.Flags().GetString("strategy")
 		quantum, _ := cmd.Flags().GetInt("quantum")
 		LossProtection, _ := cmd.Flags().GetFloat64("loss-limit")
 		investingPeriod, _ := cmd.Flags().GetInt("investing-period")
-		err = app.Commands.CreateNewPlan.Handle(cmd.Context(), commands.CreateNewPlan{
-			Id:              id,
+		id, err := app.Commands.CreateNewPlan.Handle(cmd.Context(), commands.CreateNewPlan{
 			Assets:          strings.Split(assets, ","),
 			Security:        domain.MultiSigWalletSecurity(security),
 			Strategy:        domain.ProfitSharingStrategy(strategy),
@@ -56,7 +53,7 @@ to quickly create a Cobra application.`,
 			logger.Fatal().Err(err).Msg("failed to create new plan")
 		}
 
-		logger.Info().Str("id", id.String()).Msg("new plan created")
+		logger.Info().Str("id", id).Msg("new plan created")
 	},
 }
 

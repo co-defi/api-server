@@ -12,7 +12,6 @@ import (
 
 // CreateNewPlan is a command to create a new plan
 type CreateNewPlan struct {
-	Id              uuid.UUID                     `json:"id,omitempty"`
 	Assets          []string                      `json:"assets,omitempty" validate:"required,len=2"`
 	Security        domain.MultiSigWalletSecurity `json:"security,omitempty" validate:"required,oneof=2-2"`
 	Strategy        domain.ProfitSharingStrategy  `json:"strategy,omitempty" validate:"required,oneof=equal_share"`
@@ -34,13 +33,13 @@ func NewCreateNewPlanHandler(repo *eventsourcing.EventRepository) *createNewPlan
 }
 
 // Handle implements the command handler interface
-func (h *createNewPlanHandler) Handle(ctx context.Context, cmd CreateNewPlan) error {
+func (h *createNewPlanHandler) Handle(ctx context.Context, cmd CreateNewPlan) (string, error) {
 	if err := common.Validate(cmd); err != nil {
-		return err
+		return "", err
 	}
 
 	p := domain.Plan{}
-	p.SetID(cmd.Id.String())
+	p.SetID(uuid.New().String())
 	p.TrackChange(&p, &domain.PlanCreated{
 		Assets:          cmd.Assets,
 		Security:        cmd.Security,
@@ -50,8 +49,8 @@ func (h *createNewPlanHandler) Handle(ctx context.Context, cmd CreateNewPlan) er
 		InvestingPeriod: cmd.InvestingPeriod,
 	})
 	if err := h.repo.Save(&p); err != nil {
-		return fmt.Errorf("failed to save plan: %w", err)
+		return "", fmt.Errorf("failed to save plan: %w", err)
 	}
 
-	return nil
+	return p.ID(), nil
 }

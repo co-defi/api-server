@@ -1,6 +1,7 @@
 package queries
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"strings"
@@ -78,8 +79,8 @@ type Plan struct {
 }
 
 // All returns all plans
-func (pq *PlansQuery) All() ([]Plan, error) {
-	rows, err := pq.Query(`select * from plans_query;`)
+func (pq *PlansQuery) All(ctx context.Context) ([]Plan, error) {
+	rows, err := pq.QueryContext(ctx, `select * from plans_query;`)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query plans: %w", err)
 	}
