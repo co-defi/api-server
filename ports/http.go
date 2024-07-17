@@ -1,6 +1,7 @@
 package ports
 
 import (
+	"github.com/labstack/echo/v4/middleware"
 	"net/http"
 	"strings"
 
@@ -20,9 +21,12 @@ type HttpServer struct {
 
 // NewHttpServer creates a new HTTP server
 func NewHttpServer(a *app.Application) *HttpServer {
+	e := echo.New()
+	e.Use(middleware.CORS())
+	e.Use(middleware.Logger())
 	s := HttpServer{
 		app:    a,
-		echo:   echo.New(),
+		echo:   e,
 		logger: zerolog.Nop(),
 	}
 	s.registerRoutes()
