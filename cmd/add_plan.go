@@ -42,7 +42,7 @@ to quickly create a Cobra application.`,
 		LossProtection, _ := cmd.Flags().GetFloat64("loss-limit")
 		investingPeriod, _ := cmd.Flags().GetInt("investing-period")
 		id, err := app.Commands.CreateNewPlan.Handle(cmd.Context(), commands.CreateNewPlan{
-			Assets:          strings.Split(assets, ","),
+			Assets:          stringsToAssets(strings.Split(assets, ",")),
 			Security:        domain.MultiSigWalletSecurity(security),
 			Strategy:        domain.ProfitSharingStrategy(strategy),
 			Quantum:         quantum,
@@ -55,6 +55,14 @@ to quickly create a Cobra application.`,
 
 		logger.Info().Str("id", id).Msg("new plan created")
 	},
+}
+
+func stringsToAssets(strs []string) []domain.Asset {
+	assets := make([]domain.Asset, len(strs))
+	for i, s := range strs {
+		assets[i] = domain.Asset(s)
+	}
+	return assets
 }
 
 func init() {

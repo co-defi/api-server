@@ -41,7 +41,7 @@ func (pq *PlansQuery) createTable() error {
 		strategy TEXT,
 		quantum INTEGER,
 		loss_protection REAL,
-		time_frame INTEGER
+		investing_period INTEGER
 	);`)
 	return err
 }
@@ -64,18 +64,26 @@ func (pq *PlansQuery) Callback(event eventsourcing.Event) error {
 
 func (pq *PlansQuery) insertPlan(id string, e *domain.PlanCreated) error {
 	_, err := pq.Exec(`insert into plans_query (id, assets, security, strategy, quantum, loss_protection, investing_period) values (?, ?, ?, ?, ?, ?, ?);`,
-		id, strings.Join(e.Assets, ","), e.Security, e.Strategy, e.Quantum, e.LossProtection, e.InvestingPeriod)
+		id, strings.Join(assetsToStrings(e.Assets), ","), e.Security, e.Strategy, e.Quantum, e.LossProtection, e.InvestingPeriod)
 	return err
 }
 
+func assetsToStrings(assets []domain.Asset) []string {
+	strs := make([]string, len(assets))
+	for i, a := range assets {
+		strs[i] = string(a)
+	}
+	return strs
+}
+
 type Plan struct {
-	Id             string                        `json:"id,omitempty"`
-	Assets         []string                      `json:"assets,omitempty"`
-	Security       domain.MultiSigWalletSecurity `json:"security,omitempty"`
-	Strategy       domain.ProfitSharingStrategy  `json:"strategy,omitempty"`
-	Quantum        int                           `json:"quantum,omitempty"`
-	LossProtection float64                       `json:"loss_protection,omitempty"`
-	TimeFrame      int                           `json:"time_frame,omitempty"`
+	Id              string                        `json:"id"`
+	Assets          []domain.Asset                `json:"assets"`
+	Security        domain.MultiSigWalletSecurity `json:"security"`
+	Strategy        domain.ProfitSharingStrategy  `json:"strategy"`
+	Quantum         int                           `json:"quantum"`
+	LossProtection  float64                       `json:"loss_protection"`
+	InvestingPeriod int                           `json:"investing_period"`
 }
 
 // All returns all plans
@@ -89,27 +97,67 @@ func (pq *PlansQuery) All(ctx context.Context) ([]Plan, error) {
 	plans := []Plan{}
 	for rows.Next() {
 		var (
-			id             string
-			assets         string
-			security       string
-			strategy       string
-			quantum        int
-			LossProtection float64
-			timeFrame      int
+			id              string
+			assets          string
+			security        string
+			strategy        string
+			quantum         int
+			LossProtection  float64
+			investingPeriod int
 		)
-		if err := rows.Scan(&id, &assets, &security, &strategy, &quantum, &LossProtection, &timeFrame); err != nil {
+		if err := rows.Scan(&id, &assets, &security, &strategy, &quantum, &LossProtection, &investingPeriod); err != nil {
 			return nil, fmt.Errorf("failed to scan plan: %w", err)
 		}
 		plans = append(plans, Plan{
-			Id:             id,
-			Assets:         strings.Split(assets, ","),
-			Security:       domain.MultiSigWalletSecurity(security),
-			Strategy:       domain.ProfitSharingStrategy(strategy),
-			Quantum:        quantum,
-			LossProtection: LossProtection,
-			TimeFrame:      timeFrame,
+			Id:              id,
+			Assets:          stringsToAssets(strings.Split(assets, ",")),
+			Security:        domain.MultiSigWalletSecurity(security),
+			Strategy:        domain.ProfitSharingStrategy(strategy),
+			Quantum:         quantum,
+			LossProtection:  LossProtection,
+			InvestingPeriod: investingPeriod,
 		})
 	}
 
 	return plans, nil
+}
+
+func stringsToAssets(strs []string) []domain.Asset {
+	assets := make([]domain.Asset, len(strs))
+	for i, s := range strs {
+		assets[i] = domain.Asset(s)
+	}
+	return assets
+}
+
+var ErrPlanNotFound = common.NewError("plan_not_found", "plan not found")
+
+// Get returns a plan by id
+func (pq *PlansQuery) Get(ctx context.Context, id string) (*Plan, error) {
+	row := pq.QueryRowContext(ctx, `select * from plans_query where id = ?;`, id)
+
+	var (
+		assets          string
+		security        string
+		strategy        string
+		quantum         int
+		lossProtection  float64
+		investingPeriod int
+	)
+	if err := row.Scan(&id, &assets, &security, &strategy, &quantum, &lossProtection, &investingPeriod); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, ErrPlanNotFound
+		}
+		return nil, fmt.Errorf("failed to scan plan: %w", err)
+	}
+
+	return &Plan{
+		Id:              id,
+		Assets:          stringsToAssets(strings.Split(assets, ",")),
+		Security:        domain.MultiSigWalletSecurity(security),
+		Strategy:        domain.ProfitSharingStrategy(strategy),
+		Quantum:         quantum,
+		LossProtection:  lossProtection,
+		InvestingPeriod: investingPeriod,
+	}, nil
 }

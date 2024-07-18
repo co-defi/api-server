@@ -12,7 +12,7 @@ import (
 
 // CreateNewPlan is a command to create a new plan
 type CreateNewPlan struct {
-	Assets          []string                      `json:"assets,omitempty" validate:"required,len=2"`
+	Assets          []domain.Asset                `json:"assets,omitempty" validate:"required,len=2"`
 	Security        domain.MultiSigWalletSecurity `json:"security,omitempty" validate:"required,oneof=2-2"`
 	Strategy        domain.ProfitSharingStrategy  `json:"strategy,omitempty" validate:"required,oneof=equal_share"`
 	Quantum         int                           `json:"quantum,omitempty" validate:"required,min=1"`

@@ -36,7 +36,7 @@ func NewApplication(db *sql.DB) (*Application, error) {
 	app := Application{
 		Commands: Commands{
 			CreateNewPlan:     commands.NewCreateNewPlanHandler(repo),
-			CreateOrMatchPair: commands.NewCreateOrMatchPairHandler(repo, queries.Pairs),
+			CreateOrMatchPair: commands.NewCreateOrMatchPairHandler(repo, queries.Plans, queries.Pairs),
 		},
 		Queries: queries,
 		logger:  zerolog.Nop(),
@@ -87,6 +87,7 @@ func (app *Application) registerProjections(repo *eventsourcing.EventRepository)
 	app.projectionsGroup = common.RegisterProjectionsAsGroup(
 		repo,
 		app.Queries.Plans,
+		app.Queries.Pairs,
 	)
 }
 

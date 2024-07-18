@@ -1,13 +1,17 @@
 package ports
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 
+	"github.com/go-playground/validator/v10"
 	"github.com/labstack/echo/v4/middleware"
 
 	"github.com/co-defi/api-server/app"
+	"github.com/co-defi/api-server/app/commands"
 	"github.com/co-defi/api-server/common"
+	"github.com/co-defi/api-server/domain"
 	"github.com/labstack/echo/v4"
 	"github.com/rs/zerolog"
 )
@@ -43,18 +47,21 @@ func (s *HttpServer) WithLogger(logger zerolog.Logger) {
 
 func (s *HttpServer) registerRoutes() {
 	s.echo.GET("/plans", s.getPlans)
+
+	s.echo.POST(("/pairs"), s.createOrMatchPair)
+	s.echo.GET("/pairs/:id", s.getPair)
 }
 
-type Plan struct {
-	Id             string   `json:"id,omitempty"`
-	Name           string   `json:"name,omitempty"`
-	Assets         []string `json:"assets,omitempty"`
-	Security       string   `json:"security,omitempty"`
-	Strategy       string   `json:"strategy,omitempty"`
-	Quantum        int      `json:"quantum,omitempty"`
-	LossProtection float64  `json:"loss_protection,omitempty"`
-	TimeFrame      int      `json:"time_frame,omitempty"`
-	APR            float64  `json:"APR,omitempty"`
+type plan struct {
+	Id              string         `json:"id"`
+	Name            string         `json:"name"`
+	Assets          []domain.Asset `json:"assets"`
+	Security        string         `json:"security"`
+	Strategy        string         `json:"strategy"`
+	Quantum         int            `json:"quantum"`
+	LossProtection  float64        `json:"loss_protection"`
+	InvestingPeriod int            `json:"time_frame"`
+	APR             float64        `json:"APR"`
 }
 
 func (s *HttpServer) getPlans(c echo.Context) error {
@@ -62,29 +69,71 @@ func (s *HttpServer) getPlans(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	response := make([]Plan, len(plans))
-	for i, plan := range plans {
-		response[i] = Plan{
-			Id:             plan.Id,
-			Name:           "Basic Low Risk Plan", // TODO: "Basic Low Risk Plan" is a hardcoded value, it should be fetched from the database
-			Assets:         plan.Assets,
-			Security:       string(plan.Security),
-			Strategy:       string(plan.Strategy),
-			Quantum:        plan.Quantum,
-			LossProtection: plan.LossProtection,
-			TimeFrame:      plan.TimeFrame,
-			APR:            0.15,
+	response := make([]plan, len(plans))
+	for i, p := range plans {
+		response[i] = plan{
+			Id:              p.Id,
+			Name:            "Basic Low Risk Plan", // TODO: "Basic Low Risk Plan" is a hardcoded value, it should be fetched from the database
+			Assets:          p.Assets,
+			Security:        string(p.Security),
+			Strategy:        string(p.Strategy),
+			Quantum:         p.Quantum,
+			LossProtection:  p.LossProtection,
+			InvestingPeriod: p.InvestingPeriod,
+			APR:             0.15,
 		}
 	}
 
 	return c.JSON(http.StatusOK, response)
 }
 
+type createOrMatchPairRequest struct {
+	PlanId             string         `json:"plan_id"`
+	ParticipantAsset   domain.Asset   `json:"participant_asset"`
+	ParticipantAddress domain.Address `json:"participant_address"`
+}
+
+type createOrMatchPairResponse struct {
+	Id string `json:"id"`
+}
+
+func (s *HttpServer) createOrMatchPair(c echo.Context) error {
+	var req createOrMatchPairRequest
+	if err := c.Bind(&req); err != nil {
+		return err
+	}
+
+	pairId, err := s.app.Commands.CreateOrMatchPair.Handle(c.Request().Context(), commands.CreateOrMatchPair{
+		PlanId:             req.PlanId,
+		ParticipantAsset:   req.ParticipantAsset,
+		ParticipantAddress: req.ParticipantAddress,
+	})
+	if err != nil {
+		return err
+	}
+
+	return c.JSON(http.StatusOK, createOrMatchPairResponse{Id: pairId})
+}
+
+func (s *HttpServer) getPair(c echo.Context) error {
+	pair, err := s.app.Queries.Pairs.Get(c.Request().Context(), c.Param("id"))
+	if err != nil {
+		return err
+	}
+
+	return c.JSON(http.StatusOK, pair)
+}
+
 func (s *HttpServer) handleError(err error, c echo.Context) {
-	switch err := err.(type) {
-	case *common.Error:
-		c.JSON(convertCodeToHttpStatus(err.Code), err)
-	default:
+	var (
+		commonErr     *common.Error
+		validationErr validator.ValidationErrors
+	)
+	if errors.As(err, &commonErr) {
+		c.JSON(convertCodeToHttpStatus(commonErr.Code), commonErr)
+	} else if errors.As(err, &validationErr) {
+		c.JSON(http.StatusBadRequest, err)
+	} else {
 		s.echo.DefaultHTTPErrorHandler(err, c)
 	}
 

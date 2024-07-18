@@ -36,6 +36,7 @@ type Pair struct {
 func (p *Pair) Register(r eventsourcing.RegisterFunc) {
 	r(
 		&PairCreated{},
+		&PairStatusChanged{},
 		&PairMatched{},
 		&WalletAddressConfirmed{},
 		&AssetAssuranceSigned{},

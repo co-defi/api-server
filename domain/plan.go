@@ -9,7 +9,7 @@ import (
 // a strategy for profit splitting, quantum of each asset's share in $, agreed loss limit and a time frame (in weeks) for the plan.
 type Plan struct {
 	eventsourcing.AggregateRoot
-	Assets          []string               `json:"assets,omitempty"`
+	Assets          []Asset                `json:"assets,omitempty"`
 	Security        MultiSigWalletSecurity `json:"security,omitempty"`
 	Strategy        ProfitSharingStrategy  `json:"strategy,omitempty"`
 	Quantum         int                    `json:"quantum,omitempty"`
@@ -57,7 +57,7 @@ const (
 
 // PlanCreated is the event for creating a new plan for the first time.
 type PlanCreated struct {
-	Assets          []string               `json:"assets,omitempty"`
+	Assets          []Asset                `json:"assets,omitempty"`
 	Security        MultiSigWalletSecurity `json:"security,omitempty"`
 	Strategy        ProfitSharingStrategy  `json:"strategy,omitempty"`
 	Quantum         int                    `json:"quantum,omitempty"`
