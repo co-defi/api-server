@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/co-defi/api-server/common"
@@ -39,8 +40,8 @@ func (pq *PairsQuery) createTable() error {
 	_, err := pq.Exec(`create table if not exists pairs_query (
 		id VARCHAR PRIMARY KEY,
 		status TEXT,
-		assets BLOB,
-		participant_addresses BLOB,
+		assets TEXT,
+		participant_addresses TEXT,
 		share_value INTEGER,
 		investing_period INTEGER,
 		wallet_security TEXT,
@@ -70,6 +71,10 @@ func (pq *PairsQuery) Callback(event eventsourcing.Event) error {
 		if err := pq.updateStatus(event, e.Status); err != nil {
 			return fmt.Errorf("failed to update pair status: %w", err)
 		}
+	case *domain.PairMatched:
+		if err := pq.setSecondParticipantAddress(event, e.ParticipantAddress); err != nil {
+			return fmt.Errorf("failed to set second participant address: %w", err)
+		}
 	}
 
 	if err := pq.Increment(); err != nil {
@@ -98,10 +103,10 @@ func (pq *PairsQuery) insertPair(event eventsourcing.Event, e *domain.PairCreate
 		deadline,
 		withdrawn_tx,
 		created_at,
-		updated_at) values (?, ?, jsonb(?), jsonb(?), ?, ?, ?, ?, ?, jsonb(?), jsonb(?), jsonb(?), jsonb(?), ?, jsonb(?), ?, ?);`,
+		updated_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?, jsonb(?), jsonb(?), jsonb(?), jsonb(?), ?, jsonb(?), ?, ?);`,
 		event.AggregateID(),
-		mustMarshalJson([]domain.Asset{e.ParticipantAsset, e.SecondaryAsset}),
-		mustMarshalJson([]domain.Address{e.ParticipantAddress, domain.EmptyAddress}),
+		strings.Join(assetsToStrings([]domain.Asset{e.ParticipantAsset, e.SecondaryAsset}), ","),
+		e.ParticipantAddress,
 		e.ShareValue,
 		e.InvestingPeriod,
 		e.WalletSecurity,
@@ -128,9 +133,23 @@ func mustMarshalJson(v any) []byte {
 	return b
 }
 
+func addressesToStrings(addresses []domain.Address) []string {
+	strs := make([]string, len(addresses))
+	for i, a := range addresses {
+		strs[i] = string(a)
+	}
+	return strs
+}
+
 func (pq *PairsQuery) updateStatus(event eventsourcing.Event, status domain.PairStatus) error {
 	_, err := pq.Exec(`update pairs_query set status = ?, updated_at = ? where id = ?;`,
-		string(status), event.Timestamp().Format(time.RFC3339), event.AggregateID())
+		status, event.Timestamp().Format(time.RFC3339), event.AggregateID())
+	return err
+}
+
+func (pq *PairsQuery) setSecondParticipantAddress(event eventsourcing.Event, address domain.Address) error {
+	_, err := pq.Exec(`update pairs_query set participant_addresses = concat(participant_addresses, ",", ?), updated_at = ? where id = ?;`,
+		address, event.Timestamp().Format(time.RFC3339), event.AggregateID())
 	return err
 }
 
@@ -175,8 +194,8 @@ func (pq *PairsQuery) Find(
 	b.Select(
 		"id",
 		"status",
-		"json(assets)",
-		"json(participant_addresses)",
+		"assets",
+		"participant_addresses",
 		"share_value",
 		"investing_period",
 		"wallet_security",
@@ -198,17 +217,26 @@ func (pq *PairsQuery) Find(
 	if len(assets) > 0 {
 		if len(assets) > 1 {
 			if assetsOrder {
-				b.Where(fmt.Sprintf("assets = jsonb(%s)", b.Var(mustMarshalJson(assets))))
+				b.Where(b.Equal("assets", strings.Join(assetsToStrings(assets), ",")))
 			} else {
-				b.Where(fmt.Sprintf("exists (select 1 from json_each(pairs_query.assets) as assets_array where assets_array.value = %s or assets_array.value = %s)",
-					b.Var(assets[0]), b.Var(assets[1])))
+				b.Where(b.Or(
+					b.Like("assets", fmt.Sprintf("%%%s%%", b.Var(assets[0]))),
+					b.Like("assets", fmt.Sprintf("%%%s%%", b.Var(assets[1]))),
+				))
 			}
 		} else {
-			b.Where(fmt.Sprintf("exists (select 1 from json_each(pairs_query.assets) as assets_array where assets_array.value = %s)", b.Var(assets[0])))
+			b.Where(b.Like("assets", fmt.Sprintf("%%%s%%", b.Var(assets[0]))))
 		}
 	}
 	if len(participantAddresses) > 0 {
-		b.Where(b.Exists(buildParticipantAddressesWhereClause(participantAddresses)))
+		if len(participantAddresses) > 1 {
+			b.Where(b.Or(
+				b.Like("participant_addresses", fmt.Sprintf("%%%s%%", b.Var(participantAddresses[0]))),
+				b.Like("participant_addresses", fmt.Sprintf("%%%s%%", b.Var(participantAddresses[1]))),
+			))
+		} else {
+			b.Where(b.Like("participant_addresses", fmt.Sprintf("%%%s%%", b.Var(participantAddresses[0]))))
+		}
 	}
 	if shareValue != nil {
 		b.Where(b.Equal("share_value", *shareValue))
@@ -238,8 +266,8 @@ func (pq *PairsQuery) Find(
 		var (
 			id                    string
 			status                string
-			assets                []byte
-			participantAddresses  []byte
+			assets                string
+			participantAddresses  string
 			shareValue            int
 			investingPeriod       int
 			walletSecurity        string
@@ -280,8 +308,8 @@ func (pq *PairsQuery) Find(
 		p := Pair{
 			Id:                    id,
 			Status:                domain.PairStatus(status),
-			Assets:                mustUnmarshalToType[[]domain.Asset](assets),
-			ParticipantAddresses:  mustUnmarshalToType[[]domain.Address](participantAddresses),
+			Assets:                stringsToAssets(strings.Split(assets, ",")),
+			ParticipantAddresses:  stringsToAddresses(strings.Split(participantAddresses, ",")),
 			ShareValue:            shareValue,
 			InvestingPeriod:       investingPeriod,
 			WalletSecurity:        domain.MultiSigWalletSecurity(walletSecurity),
@@ -303,26 +331,12 @@ func (pq *PairsQuery) Find(
 	return pairs, nil
 }
 
-func buildAssetsWhereClause(b *sqlbuilder.SelectBuilder, assets []domain.Asset) string {
-	if len(assets) > 1 {
-		return fmt.Sprintf("SELECT 1 FROM json_each(pairs_query.assets) as assets_array WHERE assets_array.value = %s OR assets_array.value = %s", b.Var(assets[0]), b.Var(assets[1]))
-	} else {
-		return fmt.Sprintf("SELECT 1 FROM json_each(pairs_query.assets) as assets_array WHERE assets_array.value = %s", b.Var(assets[0]))
+func stringsToAddresses(strs []string) []domain.Address {
+	addresses := make([]domain.Address, len(strs))
+	for i, s := range strs {
+		addresses[i] = domain.Address(s)
 	}
-}
-
-func buildParticipantAddressesWhereClause(participantAddresses []domain.Address) string {
-	b := sqlbuilder.NewSelectBuilder()
-	b.Select("1").From("json_each(pairs_query.participant_addresses) as participant_addresses_array")
-	if len(participantAddresses) == 2 {
-		b.Where(b.Or(
-			b.Equal("participant_addresses_array.value", participantAddresses[0]),
-			b.Equal("participant_addresses_array.value", participantAddresses[1]),
-		))
-	} else {
-		b.Where(b.Equal("participant_addresses_array.value", participantAddresses[0]))
-	}
-	return b.String()
+	return addresses
 }
 
 func mustUnmarshalToType[T any](b []byte) T {
@@ -373,8 +387,8 @@ func (pq *PairsQuery) Get(ctx context.Context, id string) (*Pair, error) {
 		`select
 			id,
 			status,
-			json(assets),
-			json(participant_addresses),
+			assets,
+			participant_addresses,
 			share_value,
 			investing_period,
 			wallet_security,
@@ -395,8 +409,8 @@ func (pq *PairsQuery) Get(ctx context.Context, id string) (*Pair, error) {
 
 	var (
 		status                string
-		assets                []byte
-		participantAddresses  []byte
+		assets                string
+		participantAddresses  string
 		shareValue            int
 		investingPeriod       int
 		walletSecurity        string
@@ -441,8 +455,8 @@ func (pq *PairsQuery) Get(ctx context.Context, id string) (*Pair, error) {
 	p := Pair{
 		Id:                    id,
 		Status:                domain.PairStatus(status),
-		Assets:                mustUnmarshalToType[[]domain.Asset](assets),
-		ParticipantAddresses:  mustUnmarshalToType[[]domain.Address](participantAddresses),
+		Assets:                stringsToAssets(strings.Split(assets, ",")),
+		ParticipantAddresses:  stringsToAddresses(strings.Split(participantAddresses, ",")),
 		ShareValue:            shareValue,
 		InvestingPeriod:       investingPeriod,
 		WalletSecurity:        domain.MultiSigWalletSecurity(walletSecurity),

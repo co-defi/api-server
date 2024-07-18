@@ -42,6 +42,7 @@ func (e *Error) Error() string {
 	return fmt.Sprintf("%s: %s", e.Message, e.Internal)
 }
 
+// ErrorFromValidationErrors creates a domain error from a list of validation errors
 func ErrorFromValidationErrors(errs validator.ValidationErrors) *Error {
 	meta := make(map[string]interface{})
 	for _, err := range errs {

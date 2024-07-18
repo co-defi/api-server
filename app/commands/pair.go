@@ -74,8 +74,8 @@ func (h *createOrMatchPairHandler) Handle(ctx context.Context, cmd CreateOrMatch
 	}
 
 	// If there's no suitable pair, create a new pair and wait for the counterpart
+	p := domain.Pair{}
 	if len(pairs) < 1 {
-		p := domain.Pair{}
 		p.SetID(uuid.New().String())
 		p.TrackChange(&p, &domain.PairCreated{
 			ParticipantAsset:      cmd.ParticipantAsset,
@@ -88,13 +88,20 @@ func (h *createOrMatchPairHandler) Handle(ctx context.Context, cmd CreateOrMatch
 			LossProtection:        plan.LossProtection,
 		})
 		p.TrackChange(&p, &domain.PairStatusChanged{Status: domain.PairStatusWaiting})
-		if err := h.repo.Save(&p); err != nil {
-			return "", fmt.Errorf("failed to save pair: %w", err)
+	} else {
+		// If there's a suitable pair, match the pair
+		err := h.repo.GetWithContext(ctx, pairs[0].Id, &p)
+		if err != nil {
+			return "", fmt.Errorf("failed to get pair: %w", err)
 		}
-		return p.ID(), nil
+		p.TrackChange(&p, &domain.PairMatched{ParticipantAddress: cmd.ParticipantAddress})
+		p.TrackChange(&p, &domain.PairStatusChanged{Status: domain.PairStatusWalletConformation})
+	}
+	if err := h.repo.Save(&p); err != nil {
+		return "", fmt.Errorf("failed to save pair: %w", err)
 	}
 
-	return pairs[0].Id, nil
+	return p.ID(), nil
 }
 
 func containsAsset(assets []domain.Asset, asset domain.Asset) bool {
