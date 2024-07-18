@@ -157,6 +157,7 @@ type Pair struct {
 }
 
 // Find finds pairs by given conditions
+// TODO: Add pagination and order by
 func (pq *PairsQuery) Find(
 	ctx context.Context,
 	status *domain.PairStatus,

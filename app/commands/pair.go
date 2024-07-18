@@ -13,9 +13,9 @@ import (
 
 // CreateOrMatchPair is a command to create a new pair or match an existing pair.
 type CreateOrMatchPair struct {
-	PlanId             string         `json:"plan_id,omitempty" validate:"required,uuid4"`
-	ParticipantAsset   domain.Asset   `json:"participant_asset,omitempty" validate:"required"`
-	ParticipantAddress domain.Address `json:"participant_address,omitempty" validate:"required"`
+	PlanId             string         `json:"plan_id" validate:"required,uuid4"`
+	ParticipantAsset   domain.Asset   `json:"participant_asset" validate:"required"`
+	ParticipantAddress domain.Address `json:"participant_address" validate:"required"`
 }
 
 // CreateOrMatchPairHandler is a command handler for CreateOrMatchPair
@@ -54,6 +54,8 @@ func (h *createOrMatchPairHandler) Handle(ctx context.Context, cmd CreateOrMatch
 	}
 	secondaryAsset := getSecondaryAsset(cmd.ParticipantAsset, plan.Assets)
 
+	// Find a pair with the same status, secondary asset as the participant asset and primary asset as the secondary asset
+	// i.e. the counterpart of the participant asset
 	var status = domain.PairStatusWaiting
 	pairs, err := h.pairsQuery.Find(
 		ctx,
@@ -71,6 +73,7 @@ func (h *createOrMatchPairHandler) Handle(ctx context.Context, cmd CreateOrMatch
 		return "", fmt.Errorf("failed to find pairs: %w", err)
 	}
 
+	// If there's no suitable pair, create a new pair and wait for the counterpart
 	if len(pairs) < 1 {
 		p := domain.Pair{}
 		p.SetID(uuid.New().String())
@@ -91,7 +94,7 @@ func (h *createOrMatchPairHandler) Handle(ctx context.Context, cmd CreateOrMatch
 		return p.ID(), nil
 	}
 
-	return "", fmt.Errorf("failed to find pair")
+	return pairs[0].Id, nil
 }
 
 func containsAsset(assets []domain.Asset, asset domain.Asset) bool {

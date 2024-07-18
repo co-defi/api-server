@@ -1,6 +1,11 @@
 package common
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/go-playground/validator/v10"
+	"github.com/iancoleman/strcase"
+)
 
 // Error is a domain error that includes a code, message, meta
 type Error struct {
@@ -35,4 +40,13 @@ func (e *Error) Error() string {
 	}
 
 	return fmt.Sprintf("%s: %s", e.Message, e.Internal)
+}
+
+func ErrorFromValidationErrors(errs validator.ValidationErrors) *Error {
+	meta := make(map[string]interface{})
+	for _, err := range errs {
+		meta[strcase.ToSnake(err.Field())] = err.ActualTag()
+	}
+
+	return NewError("invalid_request", "validation error").IncludeMeta(meta)
 }

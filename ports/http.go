@@ -132,7 +132,7 @@ func (s *HttpServer) handleError(err error, c echo.Context) {
 	if errors.As(err, &commonErr) {
 		c.JSON(convertCodeToHttpStatus(commonErr.Code), commonErr)
 	} else if errors.As(err, &validationErr) {
-		c.JSON(http.StatusBadRequest, err)
+		c.JSON(http.StatusBadRequest, common.ErrorFromValidationErrors(validationErr))
 	} else {
 		s.echo.DefaultHTTPErrorHandler(err, c)
 	}
