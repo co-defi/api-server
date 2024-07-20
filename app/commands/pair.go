@@ -121,3 +121,72 @@ func getSecondaryAsset(primaryAsset domain.Asset, assets []domain.Asset) domain.
 	}
 	return ""
 }
+
+// ConfirmPairWallet is a command to confirm the shared wallet addresses
+type ConfirmPairWallet struct {
+	PairId               string                          `json:"pair_id" validate:"required,uuid4"`
+	ParticipantAsset     domain.Asset                    `json:"participant_asset" validate:"required"`
+	ParticipantPublicKey string                          `json:"participant_public_key" validate:"required"`
+	WalletAddresses      map[domain.Asset]domain.Address `json:"wallet_addresses" validate:"required,len=2"`
+}
+
+// ConfirmPairWalletHandler is a command handler for ConfirmPairWallet
+type ConfirmPairWalletHandler common.CommandHandler[ConfirmPairWallet]
+
+type confirmPairWalletHandler struct {
+	repo       *eventsourcing.EventRepository
+	pairsQuery *queries.PairsQuery
+}
+
+// NewConfirmPairWalletHandler creates a new ConfirmPairWalletHandler
+func NewConfirmPairWalletHandler(repo *eventsourcing.EventRepository) *confirmPairWalletHandler {
+	return &confirmPairWalletHandler{repo: repo}
+}
+
+var (
+	ErrPairNotFound           = common.NewError("pair_not_found", "pair not found")
+	ErrInvalidPairStatus      = common.NewError("invalid_pair_status", "pair status is not valid for this operation")
+	ErrInvalidWalletAddresses = common.NewError("invalid_wallet_addresses", "wallet addresses are not the same for both participants")
+)
+
+// Handle implements the command handler interface
+func (h *confirmPairWalletHandler) Handle(ctx context.Context, cmd ConfirmPairWallet) (string, error) {
+	if err := common.Validate(cmd); err != nil {
+		return "", err
+	}
+
+	p := domain.Pair{}
+	if err := h.repo.GetWithContext(ctx, cmd.PairId, &p); err != nil {
+		if err == eventsourcing.ErrAggregateNotFound {
+			return "", ErrPairNotFound
+		}
+		return "", fmt.Errorf("failed to get pair: %w", err)
+	}
+
+	if p.Status != domain.PairStatusWalletConformation {
+		return "", ErrInvalidPairStatus
+	}
+
+	if !p.HasAsset(cmd.ParticipantAsset) {
+		return "", ErrInvalidAssetForPlan
+	}
+
+	if p.Wallet != nil && !p.Wallet.AreAddressesEqual(cmd.WalletAddresses) {
+		return "", ErrInvalidWalletAddresses
+	}
+
+	p.TrackChange(&p, &domain.WalletAddressConfirmed{
+		ParticipantAsset: cmd.ParticipantAsset,
+		PublicKey:        cmd.ParticipantPublicKey,
+		WalletAddresses:  cmd.WalletAddresses,
+	})
+	if len(p.Wallet.PublicKeys) == 2 {
+		p.TrackChange(&p, &domain.PairStatusChanged{Status: domain.PairStatusWalledConfirmed})
+	}
+
+	if err := h.repo.Save(&p); err != nil {
+		return "", fmt.Errorf("failed to save pair: %w", err)
+	}
+
+	return p.ID(), nil
+}

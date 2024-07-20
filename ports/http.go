@@ -40,16 +40,12 @@ func NewHttpServer(a *app.Application) *HttpServer {
 	return &s
 }
 
-// WithLogger sets the logger for the server
-func (s *HttpServer) WithLogger(logger zerolog.Logger) {
-	s.logger = logger
-}
-
 func (s *HttpServer) registerRoutes() {
 	s.echo.GET("/plans", s.getPlans)
 
 	s.echo.POST(("/pairs"), s.createOrMatchPair)
 	s.echo.GET("/pairs/:id", s.getPair)
+	s.echo.POST("/pairs/:id/confirm-wallet", s.confirmPairWallet)
 }
 
 type plan struct {
@@ -124,6 +120,31 @@ func (s *HttpServer) getPair(c echo.Context) error {
 	return c.JSON(http.StatusOK, pair)
 }
 
+type confirmPairWalletRequest struct {
+	ParticipantAsset     domain.Asset                    `json:"participant_asset,omitempty"`
+	ParticipantPublicKey string                          `json:"participant_public_key,omitempty"`
+	WalletAddresses      map[domain.Asset]domain.Address `json:"wallet_addresses,omitempty"`
+}
+
+func (s *HttpServer) confirmPairWallet(c echo.Context) error {
+	var req confirmPairWalletRequest
+	if err := c.Bind(&req); err != nil {
+		return err
+	}
+
+	_, err := s.app.Commands.ConfirmPairWallet.Handle(c.Request().Context(), commands.ConfirmPairWallet{
+		PairId:               c.Param("id"),
+		ParticipantAsset:     req.ParticipantAsset,
+		ParticipantPublicKey: req.ParticipantPublicKey,
+		WalletAddresses:      req.WalletAddresses,
+	})
+	if err != nil {
+		return err
+	}
+
+	return c.NoContent(http.StatusOK)
+}
+
 func (s *HttpServer) handleError(err error, c echo.Context) {
 	var (
 		commonErr     *common.Error
@@ -151,6 +172,11 @@ func convertCodeToHttpStatus(code string) int {
 	default:
 		return http.StatusInternalServerError
 	}
+}
+
+// WithLogger sets the logger for the server
+func (s *HttpServer) WithLogger(logger zerolog.Logger) {
+	s.logger = logger
 }
 
 // Start starts the HTTP server

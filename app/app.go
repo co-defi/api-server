@@ -37,6 +37,7 @@ func NewApplication(db *sql.DB) (*Application, error) {
 		Commands: Commands{
 			CreateNewPlan:     commands.NewCreateNewPlanHandler(repo),
 			CreateOrMatchPair: commands.NewCreateOrMatchPairHandler(repo, queries.Plans, queries.Pairs),
+			ConfirmPairWallet: commands.NewConfirmPairWalletHandler(repo),
 		},
 		Queries: queries,
 		logger:  zerolog.Nop(),
@@ -118,6 +119,7 @@ func (app *Application) StopProjections() {
 type Commands struct {
 	CreateNewPlan     commands.CreateNewPlanHandler
 	CreateOrMatchPair commands.CreateOrMatchPairHandler
+	ConfirmPairWallet commands.ConfirmPairWalletHandler
 }
 
 type Queries struct {
