@@ -47,6 +47,7 @@ func (s *HttpServer) WithLogger(logger zerolog.Logger) {
 
 func (s *HttpServer) registerRoutes() {
 	s.echo.GET("/plans", s.getPlans)
+	s.echo.GET("/plan:id", s.getPlan)
 
 	s.echo.POST(("/pairs"), s.createOrMatchPair)
 	s.echo.GET("/pairs/:id", s.getPair)
@@ -85,6 +86,28 @@ func (s *HttpServer) getPlans(c echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, response)
+}
+
+func (s *HttpServer) getPlan(c echo.Context) error {
+	id := c.Param("id")
+	if id == "" {
+		return c.JSON(http.StatusBadRequest, common.Error{Code: "invalid_id", Message: "id is required"})
+	}
+	p, err := s.app.Queries.Plans.Get(c.Request().Context(), id)
+	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusOK, plan{
+		Id:              p.Id,
+		Name:            "Basic Low Risk Plan", // TODO: "Basic Low Risk Plan" is a hardcoded value, it should be fetched from the database
+		Assets:          p.Assets,
+		Security:        string(p.Security),
+		Strategy:        string(p.Strategy),
+		Quantum:         p.Quantum,
+		LossProtection:  p.LossProtection,
+		InvestingPeriod: p.InvestingPeriod,
+		APR:             0.15,
+	})
 }
 
 type createOrMatchPairRequest struct {
