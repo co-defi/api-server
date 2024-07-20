@@ -75,6 +75,10 @@ func (pq *PairsQuery) Callback(event eventsourcing.Event) error {
 		if err := pq.setSecondParticipantAddress(event, e.ParticipantAddress); err != nil {
 			return fmt.Errorf("failed to set second participant address: %w", err)
 		}
+	case *domain.WalletAddressConfirmed:
+		if err := pq.updateMultisigWallet(event, e); err != nil {
+			return fmt.Errorf("failed to update pair status: %w", err)
+		}
 	}
 
 	if err := pq.Increment(); err != nil {
@@ -112,7 +116,7 @@ func (pq *PairsQuery) insertPair(event eventsourcing.Event, e *domain.PairCreate
 		e.WalletSecurity,
 		e.ProfitSharingStrategy,
 		e.LossProtection,
-		mustMarshalJson(nil),
+		mustMarshalJson(domain.MultisigWallet{}),
 		mustMarshalJson(map[domain.Asset][]domain.SignedTx{}),
 		mustMarshalJson(map[domain.Asset]domain.TxHash{}),
 		mustMarshalJson(nil),
@@ -148,8 +152,22 @@ func (pq *PairsQuery) updateStatus(event eventsourcing.Event, status domain.Pair
 }
 
 func (pq *PairsQuery) setSecondParticipantAddress(event eventsourcing.Event, address domain.Address) error {
-	_, err := pq.Exec(`update pairs_query set participant_addresses = concat(participant_addresses, ",", ?), updated_at = ? where id = ?;`,
+	_, err := pq.Exec(`update pairs_query set participant_addresses = format('%s,%s', participant_addresses, ?), updated_at = ? where id = ?;`,
 		address, event.Timestamp().Format(time.RFC3339), event.AggregateID())
+	return err
+}
+
+func (pq *PairsQuery) updateMultisigWallet(event eventsourcing.Event, e *domain.WalletAddressConfirmed) error {
+	_, err := pq.Exec(`update pairs_query set 
+		wallet = jsonb_set(jsonb_set(wallet, format('$.public_keys."%s"', ?), ?), '$.addresses', jsonb(?)),
+		updated_at = ? 
+		where id = ?;`,
+		e.ParticipantAsset,
+		e.PublicKey,
+		mustMarshalJson(e.WalletAddresses),
+		event.Timestamp().Format(time.RFC3339),
+		event.AggregateID(),
+	)
 	return err
 }
 

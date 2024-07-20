@@ -92,13 +92,12 @@ func (p *Pair) applyPairMatched(e *PairMatched) {
 func (p *Pair) applyWalletAddressConfirmed(e *WalletAddressConfirmed) {
 	if p.Wallet == nil {
 		p.Wallet = &MultisigWallet{
-			Addresses: e.WalletAddresses,
+			PublicKeys: make(map[Asset]string),
+			Addresses:  e.WalletAddresses,
 		}
 	}
 
-	if p.Wallet.areAddressesEqual(e.WalletAddresses) {
-		p.Wallet.PublicKeys[e.ParticipantAsset] = e.PublicKey
-	}
+	p.Wallet.PublicKeys[e.ParticipantAsset] = e.PublicKey
 }
 
 func (p *Pair) applyAssetAssuranceSigned(e *AssetAssuranceSigned) {
@@ -138,13 +137,24 @@ func (p *Pair) applyWithdrawn(e *Withdrawn) {
 	p.WithdrawnTx = &e.TxHash
 }
 
+// HasAsset checks if the pair has the asset
+func (p Pair) HasAsset(asset Asset) bool {
+	for _, a := range p.Assets {
+		if a == asset {
+			return true
+		}
+	}
+
+	return false
+
+}
+
 // PairStatus is the type for the status of the pair
 type PairStatus string
 
 const (
 	PairStatusWaiting            PairStatus = "waiting"
 	PairStatusWalletConformation PairStatus = "wallet_conformation"
-	PairStatusWalledConfirmed    PairStatus = "wallet_confirmed"
 	PairStatusAssurance          PairStatus = "assurance"
 	PairStatusDeposit            PairStatus = "deposit"
 	PairStatusPreSignWithdrawal  PairStatus = "pre_sign_withdrawal"
@@ -166,7 +176,7 @@ type MultisigWallet struct {
 	// Other fields for Vaultisig internal stuff...
 }
 
-func (w *MultisigWallet) areAddressesEqual(addresses map[Asset]Address) bool {
+func (w *MultisigWallet) AreAddressesEqual(addresses map[Asset]Address) bool {
 	for asset, address := range addresses {
 		if w.Addresses[asset] != address {
 			return false
