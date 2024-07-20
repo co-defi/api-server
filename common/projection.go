@@ -125,3 +125,9 @@ func RegisterProjectionsAsGroup(repo *eventsourcing.EventRepository, ps ...Proje
 
 	return repo.Projections.Group(esps...)
 }
+
+// ResetAllProjections resets all projections by dropping the projections table
+func ResetAllProjections(db *sql.DB) error {
+	_, err := db.Exec(`drop table if exists projections;`)
+	return err
+}
