@@ -146,7 +146,12 @@ func (p Pair) HasAsset(asset Asset) bool {
 	}
 
 	return false
+}
 
+// HasAssurancesForAsset checks if the pair has assurances for the asset
+func (p Pair) HasAssurancesForAsset(asset Asset) bool {
+	_, ok := p.Assurances[asset]
+	return ok
 }
 
 // PairStatus is the type for the status of the pair
@@ -188,9 +193,9 @@ func (w *MultisigWallet) AreAddressesEqual(addresses map[Asset]Address) bool {
 
 // SignedTx is the type for the transactions that are signed by the participants
 type SignedTx struct {
-	Nonce     int    `json:"nonce,omitempty"`
-	Tx        []byte `json:"tx,omitempty"`
-	Signature []byte `json:"signature,omitempty"`
+	Nonce     int    `json:"nonce"`
+	Tx        []byte `json:"tx"`
+	Signature []byte `json:"signature"`
 }
 
 // TxHash is the type for the transaction hash

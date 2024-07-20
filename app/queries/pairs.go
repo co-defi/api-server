@@ -79,6 +79,10 @@ func (pq *PairsQuery) Callback(event eventsourcing.Event) error {
 		if err := pq.updateMultisigWallet(event, e); err != nil {
 			return fmt.Errorf("failed to update pair status: %w", err)
 		}
+	case *domain.AssetAssuranceSigned:
+		if err := pq.updateAssurances(event, e); err != nil {
+			return fmt.Errorf("failed to update assurances: %w", err)
+		}
 	}
 
 	if err := pq.Increment(); err != nil {
@@ -165,6 +169,19 @@ func (pq *PairsQuery) updateMultisigWallet(event eventsourcing.Event, e *domain.
 		e.ParticipantAsset,
 		e.PublicKey,
 		mustMarshalJson(e.WalletAddresses),
+		event.Timestamp().Format(time.RFC3339),
+		event.AggregateID(),
+	)
+	return err
+}
+
+func (pq *PairsQuery) updateAssurances(event eventsourcing.Event, e *domain.AssetAssuranceSigned) error {
+	_, err := pq.Exec(`update pairs_query set
+		assurances = jsonb_set(assurances, format('$."%s"[#]', ?), jsonb(?)),
+		updated_at = ?
+		where id = ?;`,
+		e.Asset,
+		mustMarshalJson(e.Tx),
 		event.Timestamp().Format(time.RFC3339),
 		event.AggregateID(),
 	)

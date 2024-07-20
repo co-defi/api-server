@@ -196,3 +196,101 @@ func (h *confirmPairWalletHandler) Handle(ctx context.Context, cmd ConfirmPairWa
 
 	return p.ID(), nil
 }
+
+// SetPairAssurances is a command to set assurances for a pair
+type SetPairAssurances struct {
+	PairId           string            `json:"pair_id" validate:"required,uuid4"`
+	ParticipantAsset domain.Asset      `json:"participant_asset" validate:"required"`
+	Assurances       []domain.SignedTx `json:"assurances" validate:"required"`
+}
+
+// SetPairAssurancesHandler is a command handler for SetPairAssurances
+type SetPairAssurancesHandler common.CommandHandler[SetPairAssurances]
+
+type setPairAssurancesHandler struct {
+	repo *eventsourcing.EventRepository
+}
+
+// NewSetPairAssurancesHandler creates a new SetPairAssurancesHandler
+func NewSetPairAssurancesHandler(repo *eventsourcing.EventRepository) *setPairAssurancesHandler {
+	return &setPairAssurancesHandler{repo: repo}
+}
+
+var ErrAlreadySetAssurances = common.NewError("already_set_assurances", "assurances are already set")
+
+// Handle implements the command handler interface
+func (h *setPairAssurancesHandler) Handle(ctx context.Context, cmd SetPairAssurances) (string, error) {
+	if err := common.Validate(cmd); err != nil {
+		return "", err
+	}
+
+	if err := validateAssurances(cmd.ParticipantAsset, cmd.Assurances); err != nil {
+		return "", err
+	}
+
+	p := domain.Pair{}
+	if err := h.repo.GetWithContext(ctx, cmd.PairId, &p); err != nil {
+		if err == eventsourcing.ErrAggregateNotFound {
+			return "", ErrPairNotFound
+		}
+		return "", fmt.Errorf("failed to get pair: %w", err)
+	}
+
+	if p.Status != domain.PairStatusAssurance {
+		return "", ErrInvalidPairStatus
+	}
+
+	if !p.HasAsset(cmd.ParticipantAsset) {
+		return "", ErrInvalidAssetForPlan
+	}
+
+	if p.HasAssurancesForAsset(cmd.ParticipantAsset) {
+		return "", ErrAlreadySetAssurances
+	}
+
+	for _, assurance := range cmd.Assurances {
+		p.TrackChange(&p, &domain.AssetAssuranceSigned{
+			Asset: cmd.ParticipantAsset,
+			Tx:    assurance,
+		})
+	}
+
+	if len(p.Assurances) == 2 {
+		p.TrackChange(&p, &domain.PairStatusChanged{Status: domain.PairStatusDeposit})
+	}
+
+	if err := h.repo.Save(&p); err != nil {
+		return "", fmt.Errorf("failed to save pair: %w", err)
+	}
+
+	return p.ID(), nil
+}
+
+var ErrInvalidAssurances = common.NewError("invalid_assurances", "assurances are not valid")
+
+func validateAssurances(asset domain.Asset, assurances []domain.SignedTx) error {
+	if !hasAssuranceWithNonce(assurances, 0) {
+		return ErrInvalidAssurances.IncludeMeta(map[string]interface{}{"missing_assurance": "missing assurance with nonce 0"})
+	}
+	if !hasAssuranceWithNonce(assurances, 2) {
+		return ErrInvalidAssurances.IncludeMeta(map[string]interface{}{"missing_assurance": "missing assurance with nonce 2"})
+	}
+
+	// THOR.RUNE requires assurance with nonce 4 because of the withdraw transaction
+	if asset == "THOR.RUNE" {
+		if !hasAssuranceWithNonce(assurances, 4) {
+			return ErrInvalidAssurances.IncludeMeta(map[string]interface{}{"missing_assurance": "missing assurance with nonce 4"})
+		}
+	}
+
+	return nil
+}
+
+func hasAssuranceWithNonce(assurances []domain.SignedTx, nonce int) bool {
+	for _, assurance := range assurances {
+		if assurance.Nonce == nonce {
+			return true
+		}
+	}
+	return false
+}

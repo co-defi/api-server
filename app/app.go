@@ -38,6 +38,7 @@ func NewApplication(db *sql.DB) (*Application, error) {
 			CreateNewPlan:     commands.NewCreateNewPlanHandler(repo),
 			CreateOrMatchPair: commands.NewCreateOrMatchPairHandler(repo, queries.Plans, queries.Pairs),
 			ConfirmPairWallet: commands.NewConfirmPairWalletHandler(repo),
+			SetPairAssurances: commands.NewSetPairAssurancesHandler(repo),
 		},
 		Queries: queries,
 		logger:  zerolog.Nop(),
@@ -120,6 +121,7 @@ type Commands struct {
 	CreateNewPlan     commands.CreateNewPlanHandler
 	CreateOrMatchPair commands.CreateOrMatchPairHandler
 	ConfirmPairWallet commands.ConfirmPairWalletHandler
+	SetPairAssurances commands.SetPairAssurancesHandler
 }
 
 type Queries struct {

@@ -47,6 +47,7 @@ func (s *HttpServer) registerRoutes() {
 	s.echo.POST(("/pairs"), s.createOrMatchPair)
 	s.echo.GET("/pairs/:id", s.getPair)
 	s.echo.POST("/pairs/:id/confirm-wallet", s.confirmPairWallet)
+	s.echo.POST("/pairs/:id/assurances", s.setPairAssurances)
 }
 
 type plan struct {
@@ -168,6 +169,29 @@ func (s *HttpServer) confirmPairWallet(c echo.Context) error {
 	return c.NoContent(http.StatusOK)
 }
 
+type setPairAssurancesRequest struct {
+	ParticipantAsset domain.Asset      `json:"participant_asset,omitempty"`
+	Assurances       []domain.SignedTx `json:"assurances,omitempty"`
+}
+
+func (s *HttpServer) setPairAssurances(c echo.Context) error {
+	var req setPairAssurancesRequest
+	if err := c.Bind(&req); err != nil {
+		return err
+	}
+
+	_, err := s.app.Commands.SetPairAssurances.Handle(c.Request().Context(), commands.SetPairAssurances{
+		PairId:           c.Param("id"),
+		ParticipantAsset: req.ParticipantAsset,
+		Assurances:       req.Assurances,
+	})
+	if err != nil {
+		return err
+	}
+
+	return c.NoContent(http.StatusOK)
+}
+
 func (s *HttpServer) handleError(err error, c echo.Context) {
 	var (
 		commonErr     *common.Error
@@ -191,6 +215,8 @@ func convertCodeToHttpStatus(code string) int {
 	case strings.Contains(code, "not_found"):
 		return http.StatusNotFound
 	case strings.Contains(code, "invalid"):
+		return http.StatusBadRequest
+	case strings.Contains(code, "already"):
 		return http.StatusBadRequest
 	default:
 		return http.StatusInternalServerError
