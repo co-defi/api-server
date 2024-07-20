@@ -8,6 +8,7 @@ import (
 	"github.com/co-defi/api-server/app/queries"
 	"github.com/co-defi/api-server/common"
 	"github.com/co-defi/api-server/domain"
+	"github.com/google/uuid"
 	"github.com/hallgren/eventsourcing"
 	sqles "github.com/hallgren/eventsourcing/eventstore/sql"
 	_ "github.com/mattn/go-sqlite3"
@@ -23,6 +24,9 @@ type Application struct {
 }
 
 func NewApplication(db *sql.DB) (*Application, error) {
+	// Set how identifiers are generated on newly created aggregates
+	eventsourcing.SetIDFunc(uuid.New().String)
+
 	repo, store, err := createEventRepository(db)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create event repository: %w", err)

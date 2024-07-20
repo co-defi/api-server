@@ -6,7 +6,6 @@ import (
 
 	"github.com/co-defi/api-server/common"
 	"github.com/co-defi/api-server/domain"
-	"github.com/google/uuid"
 	"github.com/hallgren/eventsourcing"
 )
 
@@ -39,7 +38,6 @@ func (h *createNewPlanHandler) Handle(ctx context.Context, cmd CreateNewPlan) (s
 	}
 
 	p := domain.Plan{}
-	p.SetID(uuid.New().String())
 	p.TrackChange(&p, &domain.PlanCreated{
 		Assets:          cmd.Assets,
 		Security:        cmd.Security,
