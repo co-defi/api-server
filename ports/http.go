@@ -48,6 +48,7 @@ func (s *HttpServer) registerRoutes() {
 	s.echo.GET("/pairs/:id", s.getPair)
 	s.echo.POST("/pairs/:id/confirm-wallet", s.confirmPairWallet)
 	s.echo.POST("/pairs/:id/assurances", s.setPairAssurances)
+	s.echo.POST("/pairs/:id/deposits", s.addDeposit)
 }
 
 type plan struct {
@@ -85,11 +86,14 @@ func (s *HttpServer) getPlans(c echo.Context) error {
 	return c.JSON(http.StatusOK, response)
 }
 
+var ErrInvalidPlanId = common.NewError("invalid_plan_id", "plan id is required")
+
 func (s *HttpServer) getPlan(c echo.Context) error {
 	id := c.Param("id")
 	if id == "" {
-		return c.JSON(http.StatusBadRequest, common.Error{Code: "invalid_id", Message: "id is required"})
+		return ErrInvalidPlanId
 	}
+
 	p, err := s.app.Queries.Plans.Get(c.Request().Context(), id)
 	if err != nil {
 		return err
@@ -184,6 +188,29 @@ func (s *HttpServer) setPairAssurances(c echo.Context) error {
 		PairId:           c.Param("id"),
 		ParticipantAsset: req.ParticipantAsset,
 		Assurances:       req.Assurances,
+	})
+	if err != nil {
+		return err
+	}
+
+	return c.NoContent(http.StatusOK)
+}
+
+type addDepositRequest struct {
+	Asset  domain.Asset  `json:"asset,omitempty"`
+	TxHash domain.TxHash `json:"tx_hash,omitempty"`
+}
+
+func (s *HttpServer) addDeposit(c echo.Context) error {
+	var req addDepositRequest
+	if err := c.Bind(&req); err != nil {
+		return err
+	}
+
+	_, err := s.app.Commands.AddDeposit.Handle(c.Request().Context(), commands.AddDeposit{
+		PairId: c.Param("id"),
+		Asset:  req.Asset,
+		TxHash: req.TxHash,
 	})
 	if err != nil {
 		return err

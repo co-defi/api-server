@@ -36,7 +36,7 @@ func NewCreateOrMatchPairHandler(repo *eventsourcing.EventRepository, plansQuery
 	}
 }
 
-var ErrInvalidAssetForPlan = common.NewError("invalid_asset_for_plan", "participant asset is not valid for the plan")
+var ErrInvalidAssetForPair = common.NewError("invalid_asset_for_pair", "participant asset is not valid for the pair")
 
 // Handle implements the command handler interface
 func (h *createOrMatchPairHandler) Handle(ctx context.Context, cmd CreateOrMatchPair) (string, error) {
@@ -50,7 +50,7 @@ func (h *createOrMatchPairHandler) Handle(ctx context.Context, cmd CreateOrMatch
 	}
 
 	if !containsAsset(plan.Assets, cmd.ParticipantAsset) {
-		return "", ErrInvalidAssetForPlan
+		return "", ErrInvalidAssetForPair
 	}
 	secondaryAsset := getSecondaryAsset(cmd.ParticipantAsset, plan.Assets)
 
@@ -168,11 +168,11 @@ func (h *confirmPairWalletHandler) Handle(ctx context.Context, cmd ConfirmPairWa
 	}
 
 	if !p.HasAsset(cmd.ParticipantAsset) {
-		return "", ErrInvalidAssetForPlan
+		return "", ErrInvalidAssetForPair
 	}
 	for asset := range cmd.WalletAddresses {
 		if !p.HasAsset(asset) {
-			return "", ErrInvalidAssetForPlan
+			return "", ErrInvalidAssetForPair
 		}
 	}
 
@@ -241,7 +241,7 @@ func (h *setPairAssurancesHandler) Handle(ctx context.Context, cmd SetPairAssura
 	}
 
 	if !p.HasAsset(cmd.ParticipantAsset) {
-		return "", ErrInvalidAssetForPlan
+		return "", ErrInvalidAssetForPair
 	}
 
 	if p.HasAssurancesForAsset(cmd.ParticipantAsset) {
@@ -293,4 +293,69 @@ func hasAssuranceWithNonce(assurances []domain.SignedTx, nonce int) bool {
 		}
 	}
 	return false
+}
+
+// AddDeposit is a command to add a deposit to a pair
+type AddDeposit struct {
+	PairId string        `json:"pair_id" validate:"required,uuid4"`
+	Asset  domain.Asset  `json:"asset" validate:"required"`
+	TxHash domain.TxHash `json:"tx_hash" validate:"required"`
+}
+
+// AddDepositHandler is a command handler for AddDeposit
+type AddDepositHandler = common.CommandHandler[AddDeposit]
+
+type addDepositHandler struct {
+	repo *eventsourcing.EventRepository
+}
+
+// NewAddDepositHandler creates a new AddDepositHandler
+func NewAddDepositHandler(repo *eventsourcing.EventRepository) *addDepositHandler {
+	return &addDepositHandler{repo: repo}
+}
+
+var ErrAlreadyHasDeposit = common.NewError("already_has_deposit", "pair already has a deposit for this asset")
+
+// Handle implements the command handler interface
+func (h *addDepositHandler) Handle(ctx context.Context, cmd AddDeposit) (string, error) {
+	if err := common.Validate(cmd); err != nil {
+		return "", err
+	}
+
+	p := domain.Pair{}
+	if err := h.repo.GetWithContext(ctx, cmd.PairId, &p); err != nil {
+		if err == eventsourcing.ErrAggregateNotFound {
+			return "", ErrPairNotFound
+		}
+		return "", fmt.Errorf("failed to get pair: %w", err)
+	}
+
+	if p.Status != domain.PairStatusDeposit {
+		return "", ErrInvalidPairStatus
+	}
+
+	if !p.HasAsset(cmd.Asset) {
+		return "", ErrInvalidAssetForPair
+	}
+
+	// TODO: Check the tx hash in the blockchain
+
+	if p.HasDepositForAsset(cmd.Asset) {
+		return "", ErrAlreadyHasDeposit
+	}
+
+	p.TrackChange(&p, &domain.AssetDeposited{
+		Asset:  cmd.Asset,
+		TxHash: cmd.TxHash,
+	})
+
+	if len(p.Deposits) == 2 {
+		p.TrackChange(&p, &domain.PairStatusChanged{Status: domain.PairStatusPreSignWithdrawal})
+	}
+
+	if err := h.repo.Save(&p); err != nil {
+		return "", fmt.Errorf("failed to save pair: %w", err)
+	}
+
+	return p.ID(), nil
 }

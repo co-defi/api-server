@@ -83,6 +83,10 @@ func (pq *PairsQuery) Callback(event eventsourcing.Event) error {
 		if err := pq.updateAssurances(event, e); err != nil {
 			return fmt.Errorf("failed to update assurances: %w", err)
 		}
+	case *domain.AssetDeposited:
+		if err := pq.updateDeposits(event, e); err != nil {
+			return fmt.Errorf("failed to update deposits: %w", err)
+		}
 	}
 
 	if err := pq.Increment(); err != nil {
@@ -182,6 +186,19 @@ func (pq *PairsQuery) updateAssurances(event eventsourcing.Event, e *domain.Asse
 		where id = ?;`,
 		e.Asset,
 		mustMarshalJson(e.Tx),
+		event.Timestamp().Format(time.RFC3339),
+		event.AggregateID(),
+	)
+	return err
+}
+
+func (pq *PairsQuery) updateDeposits(event eventsourcing.Event, e *domain.AssetDeposited) error {
+	_, err := pq.Exec(`update pairs_query set
+		deposits = jsonb_set(deposits, format('$."%s"', ?), ?),
+		updated_at = ?
+		where id = ?;`,
+		e.Asset,
+		e.TxHash,
 		event.Timestamp().Format(time.RFC3339),
 		event.AggregateID(),
 	)

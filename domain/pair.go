@@ -154,6 +154,12 @@ func (p Pair) HasAssurancesForAsset(asset Asset) bool {
 	return ok
 }
 
+// HasDepositForAsset checks if the pair has deposits for the asset
+func (p Pair) HasDepositForAsset(asset Asset) bool {
+	_, ok := p.Deposits[asset]
+	return ok
+}
+
 // PairStatus is the type for the status of the pair
 type PairStatus string
 
