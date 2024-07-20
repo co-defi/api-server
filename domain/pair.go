@@ -154,7 +154,6 @@ type PairStatus string
 const (
 	PairStatusWaiting            PairStatus = "waiting"
 	PairStatusWalletConformation PairStatus = "wallet_conformation"
-	PairStatusWalledConfirmed    PairStatus = "wallet_confirmed"
 	PairStatusAssurance          PairStatus = "assurance"
 	PairStatusDeposit            PairStatus = "deposit"
 	PairStatusPreSignWithdrawal  PairStatus = "pre_sign_withdrawal"

@@ -181,7 +181,7 @@ func (h *confirmPairWalletHandler) Handle(ctx context.Context, cmd ConfirmPairWa
 		WalletAddresses:  cmd.WalletAddresses,
 	})
 	if len(p.Wallet.PublicKeys) == 2 {
-		p.TrackChange(&p, &domain.PairStatusChanged{Status: domain.PairStatusWalledConfirmed})
+		p.TrackChange(&p, &domain.PairStatusChanged{Status: domain.PairStatusAssurance})
 	}
 
 	if err := h.repo.Save(&p); err != nil {
