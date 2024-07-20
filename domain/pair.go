@@ -92,7 +92,8 @@ func (p *Pair) applyPairMatched(e *PairMatched) {
 func (p *Pair) applyWalletAddressConfirmed(e *WalletAddressConfirmed) {
 	if p.Wallet == nil {
 		p.Wallet = &MultisigWallet{
-			Addresses: e.WalletAddresses,
+			PublicKeys: make(map[Asset]string),
+			Addresses:  e.WalletAddresses,
 		}
 	}
 

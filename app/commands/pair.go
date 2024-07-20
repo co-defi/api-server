@@ -170,7 +170,13 @@ func (h *confirmPairWalletHandler) Handle(ctx context.Context, cmd ConfirmPairWa
 	if !p.HasAsset(cmd.ParticipantAsset) {
 		return "", ErrInvalidAssetForPlan
 	}
+	for asset := range cmd.WalletAddresses {
+		if !p.HasAsset(asset) {
+			return "", ErrInvalidAssetForPlan
+		}
+	}
 
+	// TODO: Better participant identification and authentication
 	if p.Wallet != nil && !p.Wallet.AreAddressesEqual(cmd.WalletAddresses) {
 		return "", ErrInvalidWalletAddresses
 	}
