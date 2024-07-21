@@ -25,7 +25,9 @@ type Application struct {
 
 func NewApplication(db *sql.DB) (*Application, error) {
 	// Set how identifiers are generated on newly created aggregates
-	eventsourcing.SetIDFunc(uuid.New().String)
+	eventsourcing.SetIDFunc(func() string {
+		return uuid.New().String()
+	})
 
 	repo, store, err := createEventRepository(db)
 	if err != nil {
