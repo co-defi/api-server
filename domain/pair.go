@@ -160,6 +160,12 @@ func (p Pair) HasDepositForAsset(asset Asset) bool {
 	return ok
 }
 
+// HasLPForAsset checks if the pair has liquidity providing for the asset
+func (p Pair) HasLPForAsset(asset Asset) bool {
+	_, ok := p.LP[asset]
+	return ok
+}
+
 // PairStatus is the type for the status of the pair
 type PairStatus string
 

@@ -91,6 +91,10 @@ func (pq *PairsQuery) Callback(event eventsourcing.Event) error {
 		if err := pq.updateWithdrawTx(event, e); err != nil {
 			return fmt.Errorf("failed to update withdraw tx: %w", err)
 		}
+	case *domain.LPDone:
+		if err := pq.updateLP(event, e); err != nil {
+			return fmt.Errorf("failed to update LP: %w", err)
+		}
 	}
 
 	if err := pq.Increment(); err != nil {
@@ -215,6 +219,19 @@ func (pq *PairsQuery) updateWithdrawTx(event eventsourcing.Event, e *domain.With
 		updated_at = ?
 		where id = ?;`,
 		mustMarshalJson(e.Tx),
+		event.Timestamp().Format(time.RFC3339),
+		event.AggregateID(),
+	)
+	return err
+}
+
+func (pq *PairsQuery) updateLP(event eventsourcing.Event, e *domain.LPDone) error {
+	_, err := pq.Exec(`update pairs_query set
+		lp = jsonb_set(lp, format('$."%s"', ?), ?),
+		updated_at = ?
+		where id = ?;`,
+		e.Asset,
+		e.TxHash,
 		event.Timestamp().Format(time.RFC3339),
 		event.AggregateID(),
 	)

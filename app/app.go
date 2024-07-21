@@ -41,6 +41,7 @@ func NewApplication(db *sql.DB) (*Application, error) {
 			SetPairAssurances: commands.NewSetPairAssurancesHandler(repo),
 			AddDeposit:        commands.NewAddDepositHandler(repo),
 			SignWithdrawal:    commands.NewSignWithdrawalHandler(repo),
+			LPPair:            commands.NewLPPairHandler(repo),
 		},
 		Queries: queries,
 		logger:  zerolog.Nop(),
@@ -126,6 +127,7 @@ type Commands struct {
 	SetPairAssurances commands.SetPairAssurancesHandler
 	AddDeposit        commands.AddDepositHandler
 	SignWithdrawal    commands.SignWithdrawalHandler
+	LPPair            commands.LPPairHandler
 }
 
 type Queries struct {

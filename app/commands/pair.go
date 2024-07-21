@@ -3,6 +3,7 @@ package commands
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/co-defi/api-server/app/queries"
 	"github.com/co-defi/api-server/common"
@@ -397,6 +398,68 @@ func (h *signWithdrawalHandler) Handle(ctx context.Context, cmd SignWithdrawal) 
 
 	p.TrackChange(&p, &domain.WithdrawTxSigned{Tx: cmd.Tx})
 	p.TrackChange(&p, &domain.PairStatusChanged{Status: domain.PairStatusLP})
+
+	if err := h.repo.Save(&p); err != nil {
+		return "", fmt.Errorf("failed to save pair: %w", err)
+	}
+
+	return p.ID(), nil
+}
+
+// LPPair is a command to update the pair with LP transactions of both assets
+type LPPair struct {
+	PairId string        `json:"pair_id" validate:"required,uuid4"`
+	Asset  domain.Asset  `json:"asset" validate:"required"`
+	TxHash domain.TxHash `json:"tx_hash" validate:"required"`
+}
+
+// LPPairHandler is a command handler for LPPair
+type LPPairHandler common.CommandHandler[LPPair]
+
+type lpPairHandler struct {
+	repo *eventsourcing.EventRepository
+}
+
+// NewLPPairHandler creates a new LPPairHandler
+func NewLPPairHandler(repo *eventsourcing.EventRepository) *lpPairHandler {
+	return &lpPairHandler{repo: repo}
+}
+
+const week = 7 * 24 * time.Hour
+
+var ErrAlreadyHasLP = common.NewError("already_has_lp", "pair already has LP transactions for this asset")
+
+// Handle implements the command handler interface
+func (h *lpPairHandler) Handle(ctx context.Context, cmd LPPair) (string, error) {
+	if err := common.Validate(cmd); err != nil {
+		return "", err
+	}
+
+	p := domain.Pair{}
+	if err := h.repo.GetWithContext(ctx, cmd.PairId, &p); err != nil {
+		if err == eventsourcing.ErrAggregateNotFound {
+			return "", ErrPairNotFound
+		}
+		return "", fmt.Errorf("failed to get pair: %w", err)
+	}
+
+	if p.Status != domain.PairStatusLP {
+		return "", ErrInvalidPairStatus
+	}
+
+	if !p.HasAsset(cmd.Asset) {
+		return "", ErrInvalidAssetForPair
+	}
+
+	if p.HasLPForAsset(cmd.Asset) {
+		return "", ErrAlreadyHasLP
+	}
+
+	p.TrackChange(&p, &domain.LPDone{
+		Asset:    cmd.Asset,
+		TxHash:   cmd.TxHash,
+		Deadline: time.Now().Add(time.Duration(p.InvestingPeriod) * week),
+	})
 
 	if err := h.repo.Save(&p); err != nil {
 		return "", fmt.Errorf("failed to save pair: %w", err)
