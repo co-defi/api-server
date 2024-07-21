@@ -49,6 +49,7 @@ func (s *HttpServer) registerRoutes() {
 	s.echo.POST("/pairs/:id/confirm-wallet", s.confirmPairWallet)
 	s.echo.POST("/pairs/:id/assurances", s.setPairAssurances)
 	s.echo.POST("/pairs/:id/deposits", s.addDeposit)
+	s.echo.POST("/pairs/:id/sign-withdraw", s.signWithdrawal)
 }
 
 type plan struct {
@@ -211,6 +212,27 @@ func (s *HttpServer) addDeposit(c echo.Context) error {
 		PairId: c.Param("id"),
 		Asset:  req.Asset,
 		TxHash: req.TxHash,
+	})
+	if err != nil {
+		return err
+	}
+
+	return c.NoContent(http.StatusOK)
+}
+
+type signWithdrawalRequest struct {
+	Tx domain.SignedTx `json:"tx,omitempty"`
+}
+
+func (s *HttpServer) signWithdrawal(c echo.Context) error {
+	var req signWithdrawalRequest
+	if err := c.Bind(&req); err != nil {
+		return err
+	}
+
+	_, err := s.app.Commands.SignWithdrawal.Handle(c.Request().Context(), commands.SignWithdrawal{
+		PairId: c.Param("id"),
+		Tx:     req.Tx,
 	})
 	if err != nil {
 		return err

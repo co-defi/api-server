@@ -359,3 +359,48 @@ func (h *addDepositHandler) Handle(ctx context.Context, cmd AddDeposit) (string,
 
 	return p.ID(), nil
 }
+
+// SignWithdrawal is a command to sign a withdrawal transaction
+type SignWithdrawal struct {
+	PairId string          `json:"pair_id" validate:"required,uuid4"`
+	Tx     domain.SignedTx `json:"tx" validate:"required"`
+}
+
+// SignWithdrawalHandler is a command handler for SignWithdrawal
+type SignWithdrawalHandler common.CommandHandler[SignWithdrawal]
+
+type signWithdrawalHandler struct {
+	repo *eventsourcing.EventRepository
+}
+
+// NewSignWithdrawalHandler creates a new SignWithdrawalHandler
+func NewSignWithdrawalHandler(repo *eventsourcing.EventRepository) *signWithdrawalHandler {
+	return &signWithdrawalHandler{repo: repo}
+}
+
+func (h *signWithdrawalHandler) Handle(ctx context.Context, cmd SignWithdrawal) (string, error) {
+	if err := common.Validate(cmd); err != nil {
+		return "", err
+	}
+
+	p := domain.Pair{}
+	if err := h.repo.GetWithContext(ctx, cmd.PairId, &p); err != nil {
+		if err == eventsourcing.ErrAggregateNotFound {
+			return "", ErrPairNotFound
+		}
+		return "", fmt.Errorf("failed to get pair: %w", err)
+	}
+
+	if p.Status != domain.PairStatusPreSignWithdrawal {
+		return "", ErrInvalidPairStatus
+	}
+
+	p.TrackChange(&p, &domain.WithdrawTxSigned{Tx: cmd.Tx})
+	p.TrackChange(&p, &domain.PairStatusChanged{Status: domain.PairStatusLP})
+
+	if err := h.repo.Save(&p); err != nil {
+		return "", fmt.Errorf("failed to save pair: %w", err)
+	}
+
+	return p.ID(), nil
+}
