@@ -52,7 +52,7 @@ func (s *HttpServer) registerRoutes() {
 	s.echo.POST("/pairs/:id/assurances", s.setPairAssurances)
 	s.echo.POST("/pairs/:id/deposits", s.addDeposit)
 	s.echo.POST("/pairs/:id/sign-withdraw", s.signWithdrawal)
-	s.echo.POST("/pairs/:id/lp", s.lpDone)
+	s.echo.POST("/pairs/:id/submit-lp", s.submitLP)
 	s.echo.POST("/pairs/:id/submit-withdrawal", s.submitWithdrawal)
 }
 
@@ -283,20 +283,41 @@ func (s *HttpServer) signWithdrawal(c echo.Context) error {
 	return c.NoContent(http.StatusOK)
 }
 
-type lpDoneRequest struct {
+type submitLPRequest struct {
 	Asset  domain.Asset  `json:"asset,omitempty"`
 	TxHash domain.TxHash `json:"tx_hash,omitempty"`
 }
 
-func (s *HttpServer) lpDone(c echo.Context) error {
-	var req lpDoneRequest
+func (s *HttpServer) submitLP(c echo.Context) error {
+	var req submitLPRequest
 	if err := c.Bind(&req); err != nil {
 		return err
 	}
 
-	_, err := s.app.Commands.LPPair.Handle(c.Request().Context(), commands.LPPair{
+	_, err := s.app.Commands.SubmitLP.Handle(c.Request().Context(), commands.SubmitLP{
 		PairId: c.Param("id"),
 		Asset:  req.Asset,
+		TxHash: req.TxHash,
+	})
+	if err != nil {
+		return err
+	}
+
+	return c.NoContent(http.StatusOK)
+}
+
+type submitWithdrawalRequest struct {
+	TxHash domain.TxHash `json:"tx_hash,omitempty"`
+}
+
+func (s *HttpServer) submitWithdrawal(c echo.Context) error {
+	var req submitWithdrawalRequest
+	if err := c.Bind(&req); err != nil {
+		return err
+	}
+
+	_, err := s.app.Commands.SubmitWithdrawal.Handle(c.Request().Context(), commands.SubmitWithdrawal{
+		PairId: c.Param("id"),
 		TxHash: req.TxHash,
 	})
 	if err != nil {
@@ -322,27 +343,6 @@ func (s *HttpServer) handleError(err error, c echo.Context) {
 	if c.Response().Status == http.StatusInternalServerError {
 		s.logger.Error().Err(err).Msg("internal server error")
 	}
-}
-
-type submitWithdrawalRequest struct {
-	TxHash domain.TxHash `json:"tx_hash,omitempty"`
-}
-
-func (s *HttpServer) submitWithdrawal(c echo.Context) error {
-	var req submitWithdrawalRequest
-	if err := c.Bind(&req); err != nil {
-		return err
-	}
-
-	_, err := s.app.Commands.SubmitWithdrawal.Handle(c.Request().Context(), commands.SubmitWithdrawal{
-		PairId: c.Param("id"),
-		TxHash: req.TxHash,
-	})
-	if err != nil {
-		return err
-	}
-
-	return c.NoContent(http.StatusOK)
 }
 
 func convertCodeToHttpStatus(code string) int {

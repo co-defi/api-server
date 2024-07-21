@@ -406,23 +406,23 @@ func (h *signWithdrawalHandler) Handle(ctx context.Context, cmd SignWithdrawal) 
 	return p.ID(), nil
 }
 
-// LPPair is a command to update the pair with LP transactions of both assets
-type LPPair struct {
+// SubmitLP is a command to update the pair with LP transactions of both assets
+type SubmitLP struct {
 	PairId string        `json:"pair_id" validate:"required,uuid4"`
 	Asset  domain.Asset  `json:"asset" validate:"required"`
 	TxHash domain.TxHash `json:"tx_hash" validate:"required"`
 }
 
-// LPPairHandler is a command handler for LPPair
-type LPPairHandler common.CommandHandler[LPPair]
+// SubmitLPHandler is a command handler for SubmitLP
+type SubmitLPHandler common.CommandHandler[SubmitLP]
 
-type lpPairHandler struct {
+type submitLPHandler struct {
 	repo *eventsourcing.EventRepository
 }
 
-// NewLPPairHandler creates a new LPPairHandler
-func NewLPPairHandler(repo *eventsourcing.EventRepository) *lpPairHandler {
-	return &lpPairHandler{repo: repo}
+// NewSubmitLPHandler creates a new SubmitLPHandler
+func NewSubmitLPHandler(repo *eventsourcing.EventRepository) *submitLPHandler {
+	return &submitLPHandler{repo: repo}
 }
 
 const week = 7 * 24 * time.Hour
@@ -430,7 +430,7 @@ const week = 7 * 24 * time.Hour
 var ErrAlreadyHasLP = common.NewError("already_has_lp", "pair already has LP transactions for this asset")
 
 // Handle implements the command handler interface
-func (h *lpPairHandler) Handle(ctx context.Context, cmd LPPair) (string, error) {
+func (h *submitLPHandler) Handle(ctx context.Context, cmd SubmitLP) (string, error) {
 	if err := common.Validate(cmd); err != nil {
 		return "", err
 	}
