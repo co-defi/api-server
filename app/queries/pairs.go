@@ -323,7 +323,6 @@ func (pq *PairsQuery) Find(
 	}
 
 	query, args := b.Build()
-	fmt.Println(query, args)
 	rows, err := pq.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query pairs: %w", err)
