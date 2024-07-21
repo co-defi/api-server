@@ -42,6 +42,7 @@ func NewApplication(db *sql.DB) (*Application, error) {
 			AddDeposit:        commands.NewAddDepositHandler(repo),
 			SignWithdrawal:    commands.NewSignWithdrawalHandler(repo),
 			LPPair:            commands.NewLPPairHandler(repo),
+			SubmitWithdrawal:  commands.NewSubmitWithdrawalHandler(repo),
 		},
 		Queries: queries,
 		logger:  zerolog.Nop(),
@@ -128,6 +129,7 @@ type Commands struct {
 	AddDeposit        commands.AddDepositHandler
 	SignWithdrawal    commands.SignWithdrawalHandler
 	LPPair            commands.LPPairHandler
+	SubmitWithdrawal  commands.SubmitWithdrawalHandler
 }
 
 type Queries struct {

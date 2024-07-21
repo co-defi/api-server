@@ -467,3 +467,49 @@ func (h *lpPairHandler) Handle(ctx context.Context, cmd LPPair) (string, error) 
 
 	return p.ID(), nil
 }
+
+// SubmitWithdrawal is a command to submit a withdrawal transaction
+type SubmitWithdrawal struct {
+	PairId string        `json:"pair_id" validate:"required,uuid4"`
+	TxHash domain.TxHash `json:"tx_hash" validate:"required"`
+}
+
+// SubmitWithdrawalHandler is a command handler for SubmitWithdrawal
+type SubmitWithdrawalHandler common.CommandHandler[SubmitWithdrawal]
+
+type submitWithdrawalHandler struct {
+	repo *eventsourcing.EventRepository
+}
+
+// NewSubmitWithdrawalHandler creates a new SubmitWithdrawalHandler
+func NewSubmitWithdrawalHandler(repo *eventsourcing.EventRepository) *submitWithdrawalHandler {
+	return &submitWithdrawalHandler{repo: repo}
+}
+
+// Handle implements the command handler interface
+func (h *submitWithdrawalHandler) Handle(ctx context.Context, cmd SubmitWithdrawal) (string, error) {
+	if err := common.Validate(cmd); err != nil {
+		return "", err
+	}
+
+	p := domain.Pair{}
+	if err := h.repo.GetWithContext(ctx, cmd.PairId, &p); err != nil {
+		if err == eventsourcing.ErrAggregateNotFound {
+			return "", ErrPairNotFound
+		}
+		return "", fmt.Errorf("failed to get pair: %w", err)
+	}
+
+	if p.Status != domain.PairStatusLP {
+		return "", ErrInvalidPairStatus
+	}
+
+	p.TrackChange(&p, &domain.Withdrawn{TxHash: cmd.TxHash})
+	p.TrackChange(&p, &domain.PairStatusChanged{Status: domain.PairStatusWithdrawn})
+
+	if err := h.repo.Save(&p); err != nil {
+		return "", fmt.Errorf("failed to save pair: %w", err)
+	}
+
+	return p.ID(), nil
+}

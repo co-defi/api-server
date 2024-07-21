@@ -53,6 +53,7 @@ func (s *HttpServer) registerRoutes() {
 	s.echo.POST("/pairs/:id/deposits", s.addDeposit)
 	s.echo.POST("/pairs/:id/sign-withdraw", s.signWithdrawal)
 	s.echo.POST("/pairs/:id/lp", s.lpDone)
+	s.echo.POST("/pairs/:id/submit-withdrawal", s.submitWithdrawal)
 }
 
 type plan struct {
@@ -321,6 +322,27 @@ func (s *HttpServer) handleError(err error, c echo.Context) {
 	if c.Response().Status == http.StatusInternalServerError {
 		s.logger.Error().Err(err).Msg("internal server error")
 	}
+}
+
+type submitWithdrawalRequest struct {
+	TxHash domain.TxHash `json:"tx_hash,omitempty"`
+}
+
+func (s *HttpServer) submitWithdrawal(c echo.Context) error {
+	var req submitWithdrawalRequest
+	if err := c.Bind(&req); err != nil {
+		return err
+	}
+
+	_, err := s.app.Commands.SubmitWithdrawal.Handle(c.Request().Context(), commands.SubmitWithdrawal{
+		PairId: c.Param("id"),
+		TxHash: req.TxHash,
+	})
+	if err != nil {
+		return err
+	}
+
+	return c.NoContent(http.StatusOK)
 }
 
 func convertCodeToHttpStatus(code string) int {
