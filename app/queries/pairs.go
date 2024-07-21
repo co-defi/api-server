@@ -140,7 +140,7 @@ func (pq *PairsQuery) insertPair(event eventsourcing.Event, e *domain.PairCreate
 		mustMarshalJson(map[domain.Asset][]domain.SignedTx{}),
 		mustMarshalJson(map[domain.Asset]domain.TxHash{}),
 		mustMarshalJson(nil),
-		mustMarshalJson(nil),
+		mustMarshalJson(map[domain.Asset]domain.TxHash{}),
 		nil,
 		nil,
 		ts,
@@ -232,10 +232,12 @@ func (pq *PairsQuery) updateWithdrawTx(event eventsourcing.Event, e *domain.With
 func (pq *PairsQuery) updateLP(event eventsourcing.Event, e *domain.LPDone) error {
 	_, err := pq.Exec(`update pairs_query set
 		lp = jsonb_set(lp, format('$."%s"', ?), ?),
+		deadline = ?,
 		updated_at = ?
 		where id = ?;`,
 		e.Asset,
 		e.TxHash,
+		e.Deadline.Format(time.RFC3339),
 		event.Timestamp().Format(time.RFC3339),
 		event.AggregateID(),
 	)
