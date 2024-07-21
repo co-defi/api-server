@@ -287,7 +287,7 @@ func (pq *PairsQuery) Find(
 			if assetsOrder {
 				b.Where(b.Equal("assets", strings.Join(assetsToStrings(assets), ",")))
 			} else {
-				b.Where(b.Or(
+				b.Where(b.And(
 					b.Like("assets", fmt.Sprintf("%%%s%%", b.Var(assets[0]))),
 					b.Like("assets", fmt.Sprintf("%%%s%%", b.Var(assets[1]))),
 				))
@@ -298,7 +298,7 @@ func (pq *PairsQuery) Find(
 	}
 	if len(participantAddresses) > 0 {
 		if len(participantAddresses) > 1 {
-			b.Where(b.Or(
+			b.Where(b.And(
 				b.Like("participant_addresses", fmt.Sprintf("%%%s%%", b.Var(participantAddresses[0]))),
 				b.Like("participant_addresses", fmt.Sprintf("%%%s%%", b.Var(participantAddresses[1]))),
 			))

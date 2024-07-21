@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/go-playground/validator/v10"
+	"github.com/google/uuid"
 	"github.com/labstack/echo/v4/middleware"
 
 	"github.com/co-defi/api-server/app"
@@ -46,6 +47,7 @@ func (s *HttpServer) registerRoutes() {
 
 	s.echo.POST(("/pairs"), s.createOrMatchPair)
 	s.echo.GET("/pairs/:id", s.getPair)
+	s.echo.GET("/pairs", s.getPairs)
 	s.echo.POST("/pairs/:id/confirm-wallet", s.confirmPairWallet)
 	s.echo.POST("/pairs/:id/assurances", s.setPairAssurances)
 	s.echo.POST("/pairs/:id/deposits", s.addDeposit)
@@ -147,6 +149,44 @@ func (s *HttpServer) getPair(c echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, pair)
+}
+
+var (
+	ErrInvalidAddress = common.NewError("invalid_address", "address is required")
+)
+
+func (s *HttpServer) getPairs(c echo.Context) error {
+	planId := c.QueryParam("plan_id")
+	if err := uuid.Validate(planId); err != nil {
+		return ErrInvalidPlanId.IncludeMeta(map[string]interface{}{"plan_id": err})
+	}
+	address := domain.Address(c.QueryParam("address"))
+	if address == "" {
+		return ErrInvalidAddress
+	}
+
+	plan, err := s.app.Queries.Plans.Get(c.Request().Context(), planId)
+	if err != nil {
+		return err
+	}
+
+	pairs, err := s.app.Queries.Pairs.Find(
+		c.Request().Context(),
+		nil,
+		plan.Assets,
+		false,
+		[]domain.Address{address},
+		&plan.Quantum,
+		&plan.InvestingPeriod,
+		&plan.Security,
+		&plan.Strategy,
+		&plan.LossProtection,
+	)
+	if err != nil {
+		return err
+	}
+
+	return c.JSON(http.StatusOK, pairs)
 }
 
 type confirmPairWalletRequest struct {
