@@ -288,22 +288,22 @@ func (pq *PairsQuery) Find(
 				b.Where(b.Equal("assets", strings.Join(assetsToStrings(assets), ",")))
 			} else {
 				b.Where(b.And(
-					b.Like("assets", fmt.Sprintf("%%%s%%", b.Var(assets[0]))),
-					b.Like("assets", fmt.Sprintf("%%%s%%", b.Var(assets[1]))),
+					b.Like("assets", fmt.Sprintf("%%%s%%", assets[0])),
+					b.Like("assets", fmt.Sprintf("%%%s%%", assets[1])),
 				))
 			}
 		} else {
-			b.Where(b.Like("assets", fmt.Sprintf("%%%s%%", b.Var(assets[0]))))
+			b.Where(b.Like("assets", fmt.Sprintf("%%%s%%", assets[0])))
 		}
 	}
 	if len(participantAddresses) > 0 {
 		if len(participantAddresses) > 1 {
 			b.Where(b.And(
-				b.Like("participant_addresses", fmt.Sprintf("%%%s%%", b.Var(participantAddresses[0]))),
-				b.Like("participant_addresses", fmt.Sprintf("%%%s%%", b.Var(participantAddresses[1]))),
+				b.Like("participant_addresses", fmt.Sprintf("%%%s%%", participantAddresses[0])),
+				b.Like("participant_addresses", fmt.Sprintf("%%%s%%", participantAddresses[1])),
 			))
 		} else {
-			b.Where(b.Like("participant_addresses", fmt.Sprintf("%%%s%%", b.Var(participantAddresses[0]))))
+			b.Where(b.Like("participant_addresses", fmt.Sprintf("%%%s%%", participantAddresses[0])))
 		}
 	}
 	if shareValue != nil {
@@ -323,6 +323,7 @@ func (pq *PairsQuery) Find(
 	}
 
 	query, args := b.Build()
+	fmt.Println(query, args)
 	rows, err := pq.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query pairs: %w", err)
