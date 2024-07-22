@@ -8,7 +8,6 @@ import (
 	"github.com/co-defi/api-server/app/queries"
 	"github.com/co-defi/api-server/common"
 	"github.com/co-defi/api-server/domain"
-	"github.com/google/uuid"
 	"github.com/hallgren/eventsourcing"
 )
 
@@ -77,7 +76,6 @@ func (h *createOrMatchPairHandler) Handle(ctx context.Context, cmd CreateOrMatch
 	// If there's no suitable pair, create a new pair and wait for the counterpart
 	p := domain.Pair{}
 	if len(pairs) < 1 {
-		p.SetID(uuid.New().String())
 		p.TrackChange(&p, &domain.PairCreated{
 			ParticipantAsset:      cmd.ParticipantAsset,
 			ParticipantAddress:    cmd.ParticipantAddress,
