@@ -3,6 +3,7 @@ package common
 import (
 	"database/sql"
 	"fmt"
+	"time"
 
 	"github.com/hallgren/eventsourcing"
 	"github.com/hallgren/eventsourcing/core"
@@ -121,6 +122,7 @@ func RegisterProjectionsAsGroup(repo *eventsourcing.EventRepository, ps ...Proje
 	esps := make([]*eventsourcing.Projection, len(ps))
 	for i, p := range ps {
 		esps[i] = repo.Projections.Projection(p.Fetch, p.Callback)
+		esps[i].Pace = time.Second * 2
 	}
 
 	return repo.Projections.Group(esps...)
