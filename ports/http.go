@@ -43,7 +43,7 @@ func NewHttpServer(a *app.Application) *HttpServer {
 
 func (s *HttpServer) registerRoutes() {
 	s.echo.GET("/plans", s.getPlans)
-	s.echo.GET("/plan:id", s.getPlan)
+	s.echo.GET("/plan/:id", s.getPlan)
 
 	s.echo.POST(("/pairs"), s.createOrMatchPair)
 	s.echo.GET("/pairs/:id", s.getPair)
