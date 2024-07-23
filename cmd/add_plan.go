@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"database/sql"
 	"strings"
 
 	"github.com/co-defi/api-server/app"
@@ -21,19 +20,16 @@ Cobra is a CLI library for Go that empowers applications.
 This application is a tool to generate the needed files
 to quickly create a Cobra application.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		connStr, _ := cmd.Flags().GetString("db")
-
-		db, err := sql.Open("sqlite3", connStr)
+		db, err := prepareDB(cmd.Flags())
 		if err != nil {
 			logger.Fatal().Err(err).Msg("failed to open database")
 		}
 		defer db.Close()
 
-		app, err := app.NewApplication(db)
+		app, err := app.NewApplication(db, logger)
 		if err != nil {
 			logger.Fatal().Err(err).Msg("failed to create application instance")
 		}
-		app.WithLogger(logger)
 
 		assets, _ := cmd.Flags().GetString("assets")
 		security, _ := cmd.Flags().GetString("security")

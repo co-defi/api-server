@@ -62,55 +62,61 @@ func (pq *PairsQuery) createTable() error {
 
 // Callback implements the common.Projection.Callback
 func (pq *PairsQuery) Callback(event eventsourcing.Event) error {
+	tx, err := pq.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
 	switch e := event.Data().(type) {
 	case *domain.PairCreated:
-		if err := pq.insertPair(event, e); err != nil {
+		if err := insertPair(tx, event, e); err != nil {
 			return fmt.Errorf("failed to insert pair: %w", err)
 		}
 	case *domain.PairStatusChanged:
-		if err := pq.updateStatus(event, e.Status); err != nil {
+		if err := updateStatus(tx, event, e.Status); err != nil {
 			return fmt.Errorf("failed to update pair status: %w", err)
 		}
 	case *domain.PairMatched:
-		if err := pq.setSecondParticipantAddress(event, e.ParticipantAddress); err != nil {
+		if err := setSecondParticipantAddress(tx, event, e.ParticipantAddress); err != nil {
 			return fmt.Errorf("failed to set second participant address: %w", err)
 		}
 	case *domain.WalletAddressConfirmed:
-		if err := pq.updateMultisigWallet(event, e); err != nil {
+		if err := updateMultisigWallet(tx, event, e); err != nil {
 			return fmt.Errorf("failed to update pair status: %w", err)
 		}
 	case *domain.AssetAssuranceSigned:
-		if err := pq.updateAssurances(event, e); err != nil {
+		if err := updateAssurances(tx, event, e); err != nil {
 			return fmt.Errorf("failed to update assurances: %w", err)
 		}
 	case *domain.AssetDeposited:
-		if err := pq.updateDeposits(event, e); err != nil {
+		if err := updateDeposits(tx, event, e); err != nil {
 			return fmt.Errorf("failed to update deposits: %w", err)
 		}
 	case *domain.WithdrawTxSigned:
-		if err := pq.updateWithdrawTx(event, e); err != nil {
+		if err := updateWithdrawTx(tx, event, e); err != nil {
 			return fmt.Errorf("failed to update withdraw tx: %w", err)
 		}
 	case *domain.LPDone:
-		if err := pq.updateLP(event, e); err != nil {
+		if err := updateLP(tx, event, e); err != nil {
 			return fmt.Errorf("failed to update LP: %w", err)
 		}
 	case *domain.Withdrawn:
-		if err := pq.updateWithdrawnTx(event, e.TxHash); err != nil {
+		if err := updateWithdrawnTx(tx, event, e.TxHash); err != nil {
 			return fmt.Errorf("failed to update withdrawn tx: %w", err)
 		}
 	}
 
-	if err := pq.Increment(); err != nil {
-		return fmt.Errorf("failed to increment: %w", err)
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit: %w", err)
 	}
 
 	return nil
 }
 
-func (pq *PairsQuery) insertPair(event eventsourcing.Event, e *domain.PairCreated) error {
+func insertPair(tx executor, event eventsourcing.Event, e *domain.PairCreated) error {
 	ts := event.Timestamp().Format(time.RFC3339)
-	_, err := pq.Exec(`insert into pairs_query (
+	_, err := tx.Exec(`insert into pairs_query (
 		id,
 		assets,
 		participant_addresses,
@@ -149,6 +155,10 @@ func (pq *PairsQuery) insertPair(event eventsourcing.Event, e *domain.PairCreate
 	return err
 }
 
+type executor interface {
+	Exec(query string, args ...interface{}) (sql.Result, error)
+}
+
 func mustMarshalJson(v any) []byte {
 	b, err := json.Marshal(v)
 	if err != nil {
@@ -165,20 +175,20 @@ func addressesToStrings(addresses []domain.Address) []string {
 	return strs
 }
 
-func (pq *PairsQuery) updateStatus(event eventsourcing.Event, status domain.PairStatus) error {
-	_, err := pq.Exec(`update pairs_query set status = ?, updated_at = ? where id = ?;`,
+func updateStatus(tx executor, event eventsourcing.Event, status domain.PairStatus) error {
+	_, err := tx.Exec(`update pairs_query set status = ?, updated_at = ? where id = ?;`,
 		status, event.Timestamp().Format(time.RFC3339), event.AggregateID())
 	return err
 }
 
-func (pq *PairsQuery) setSecondParticipantAddress(event eventsourcing.Event, address domain.Address) error {
-	_, err := pq.Exec(`update pairs_query set participant_addresses = format('%s,%s', participant_addresses, ?), updated_at = ? where id = ?;`,
+func setSecondParticipantAddress(tx executor, event eventsourcing.Event, address domain.Address) error {
+	_, err := tx.Exec(`update pairs_query set participant_addresses = format('%s,%s', participant_addresses, ?), updated_at = ? where id = ?;`,
 		address, event.Timestamp().Format(time.RFC3339), event.AggregateID())
 	return err
 }
 
-func (pq *PairsQuery) updateMultisigWallet(event eventsourcing.Event, e *domain.WalletAddressConfirmed) error {
-	_, err := pq.Exec(`update pairs_query set 
+func updateMultisigWallet(tx executor, event eventsourcing.Event, e *domain.WalletAddressConfirmed) error {
+	_, err := tx.Exec(`update pairs_query set 
 		wallet = jsonb_set(jsonb_set(wallet, format('$.public_keys."%s"', ?), ?), '$.addresses', jsonb(?)),
 		updated_at = ? 
 		where id = ?;`,
@@ -191,8 +201,8 @@ func (pq *PairsQuery) updateMultisigWallet(event eventsourcing.Event, e *domain.
 	return err
 }
 
-func (pq *PairsQuery) updateAssurances(event eventsourcing.Event, e *domain.AssetAssuranceSigned) error {
-	_, err := pq.Exec(`update pairs_query set
+func updateAssurances(tx executor, event eventsourcing.Event, e *domain.AssetAssuranceSigned) error {
+	_, err := tx.Exec(`update pairs_query set
 		assurances = jsonb_set(assurances, format('$."%s"[#]', ?), jsonb(?)),
 		updated_at = ?
 		where id = ?;`,
@@ -204,8 +214,8 @@ func (pq *PairsQuery) updateAssurances(event eventsourcing.Event, e *domain.Asse
 	return err
 }
 
-func (pq *PairsQuery) updateDeposits(event eventsourcing.Event, e *domain.AssetDeposited) error {
-	_, err := pq.Exec(`update pairs_query set
+func updateDeposits(tx executor, event eventsourcing.Event, e *domain.AssetDeposited) error {
+	_, err := tx.Exec(`update pairs_query set
 		deposits = jsonb_set(deposits, format('$."%s"', ?), ?),
 		updated_at = ?
 		where id = ?;`,
@@ -217,8 +227,8 @@ func (pq *PairsQuery) updateDeposits(event eventsourcing.Event, e *domain.AssetD
 	return err
 }
 
-func (pq *PairsQuery) updateWithdrawTx(event eventsourcing.Event, e *domain.WithdrawTxSigned) error {
-	_, err := pq.Exec(`update pairs_query set
+func updateWithdrawTx(tx executor, event eventsourcing.Event, e *domain.WithdrawTxSigned) error {
+	_, err := tx.Exec(`update pairs_query set
 		withdraw_tx = jsonb(?),
 		updated_at = ?
 		where id = ?;`,
@@ -229,8 +239,8 @@ func (pq *PairsQuery) updateWithdrawTx(event eventsourcing.Event, e *domain.With
 	return err
 }
 
-func (pq *PairsQuery) updateLP(event eventsourcing.Event, e *domain.LPDone) error {
-	_, err := pq.Exec(`update pairs_query set
+func updateLP(tx executor, event eventsourcing.Event, e *domain.LPDone) error {
+	_, err := tx.Exec(`update pairs_query set
 		lp = jsonb_set(lp, format('$."%s"', ?), ?),
 		deadline = ?,
 		updated_at = ?
@@ -244,8 +254,8 @@ func (pq *PairsQuery) updateLP(event eventsourcing.Event, e *domain.LPDone) erro
 	return err
 }
 
-func (pq *PairsQuery) updateWithdrawnTx(event eventsourcing.Event, txHash domain.TxHash) error {
-	_, err := pq.Exec(`update pairs_query set
+func updateWithdrawnTx(tx executor, event eventsourcing.Event, txHash domain.TxHash) error {
+	_, err := tx.Exec(`update pairs_query set
 		withdrawn_tx = ?,
 		updated_at = ?
 		where id = ?;`,

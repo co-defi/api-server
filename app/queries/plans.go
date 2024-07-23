@@ -48,22 +48,28 @@ func (pq *PlansQuery) createTable() error {
 
 // Callback implements the common.Projection.Callback
 func (pq *PlansQuery) Callback(event eventsourcing.Event) error {
+	tx, err := pq.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
 	switch e := event.Data().(type) {
 	case *domain.PlanCreated:
-		if err := pq.insertPlan(event.AggregateID(), e); err != nil {
+		if err := insertPlan(tx, event.AggregateID(), e); err != nil {
 			return fmt.Errorf("failed to insert plan: %w", err)
 		}
 	}
 
-	if err := pq.Increment(); err != nil {
-		return fmt.Errorf("failed to increment: %w", err)
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
 	}
 
 	return nil
 }
 
-func (pq *PlansQuery) insertPlan(id string, e *domain.PlanCreated) error {
-	_, err := pq.Exec(`insert into plans_query (id, assets, security, strategy, quantum, loss_protection, investing_period) values (?, ?, ?, ?, ?, ?, ?);`,
+func insertPlan(tx executor, id string, e *domain.PlanCreated) error {
+	_, err := tx.Exec(`insert into plans_query (id, assets, security, strategy, quantum, loss_protection, investing_period) values (?, ?, ?, ?, ?, ?, ?);`,
 		id, strings.Join(assetsToStrings(e.Assets), ","), e.Security, e.Strategy, e.Quantum, e.LossProtection, e.InvestingPeriod)
 	return err
 }

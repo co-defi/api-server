@@ -23,7 +23,7 @@ type Application struct {
 	logger           zerolog.Logger
 }
 
-func NewApplication(db *sql.DB) (*Application, error) {
+func NewApplication(db *sql.DB, logger zerolog.Logger) (*Application, error) {
 	// Set how identifiers are generated on newly created aggregates
 	eventsourcing.SetIDFunc(func() string {
 		return uuid.New().String()
@@ -51,7 +51,7 @@ func NewApplication(db *sql.DB) (*Application, error) {
 			SubmitWithdrawal:  commands.NewSubmitWithdrawalHandler(repo),
 		},
 		Queries: queries,
-		logger:  zerolog.Nop(),
+		logger:  logger,
 	}
 
 	app.registerProjections(repo)
@@ -98,8 +98,8 @@ func registerAggregates(repo *eventsourcing.EventRepository) {
 func (app *Application) registerProjections(repo *eventsourcing.EventRepository) {
 	app.projectionsGroup = common.RegisterProjectionsAsGroup(
 		repo,
-		app.Queries.Plans,
-		app.Queries.Pairs,
+		common.NewFailSafeProjection(app.Queries.Plans, app.logger),
+		common.NewFailSafeProjection(app.Queries.Pairs, app.logger),
 	)
 }
 
@@ -107,11 +107,6 @@ func (app *Application) handleProjectionErrors() {
 	for res := range app.projectionsGroup.ErrChan {
 		app.logger.Error().Err(res.Error).Str("projection", res.Name).Msg("projection error")
 	}
-}
-
-// WithLogger sets the logger for the application
-func (app *Application) WithLogger(logger zerolog.Logger) {
-	app.logger = logger
 }
 
 // StartProjections starts the projections

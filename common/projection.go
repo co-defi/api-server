@@ -7,6 +7,7 @@ import (
 
 	"github.com/hallgren/eventsourcing"
 	"github.com/hallgren/eventsourcing/core"
+	"github.com/rs/zerolog"
 )
 
 const projectionCount = 100
@@ -93,23 +94,130 @@ func (bp *BaseProjection) dropTable() error {
 	return err
 }
 
+// Fetch fetches events from the store
 func (bp *BaseProjection) Fetch() (core.Iterator, error) {
 	lastStart, err := bp.getLastHandledEventSeq()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get last processed event seq: %w", err)
 	}
 
-	return bp.store.All(core.Version(lastStart+1), projectionCount)
+	it, err := bp.store.All(core.Version(lastStart+1), projectionCount)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create events iterator: %w", err)
+	}
+
+	return newCacheIterator(it)
 }
 
-func (bp *BaseProjection) Increment() error {
-	_, err := bp.Exec(`update projections set last_handled_event_seq = last_handled_event_seq + 1 where id = ?;`, bp.name)
+type cacheIterator struct {
+	events []core.Event
+	pos    int
+}
+
+func newCacheIterator(it core.Iterator) (*cacheIterator, error) {
+	var events []core.Event
+	for it.Next() {
+		e, err := it.Value()
+		if err != nil {
+			return nil, err
+		}
+
+		events = append(events, e)
+	}
+
+	return &cacheIterator{events: events, pos: -1}, nil
+}
+
+func (ci *cacheIterator) Next() bool {
+	ci.pos++
+	return ci.pos < len(ci.events)
+}
+
+func (ci *cacheIterator) Value() (core.Event, error) {
+	return ci.events[ci.pos], nil
+}
+
+func (ci *cacheIterator) Close() {}
+
+// Begin starts a new transaction for the projection
+func (bp *BaseProjection) Begin() (*sql.Tx, error) {
+	tx, err := bp.DB.Begin()
+	if err != nil {
+		return nil, err
+	}
+
+	err = incrementProjection(tx, bp.name)
+	if err != nil {
+		return nil, err
+	}
+
+	return tx, nil
+}
+
+func incrementProjection(tx *sql.Tx, name string) error {
+	_, err := tx.Exec(`update projections set last_handled_event_seq = last_handled_event_seq + 1 where id = ?;`, name)
 	return err
 }
 
 // Store is an interface that limits the methods that can be called on a store to All method only
 type Store interface {
 	All(start core.Version, count uint64) (core.Iterator, error)
+}
+
+type FailSafeProjection struct {
+	base             Projection
+	logger           zerolog.Logger
+	fetchFailures    int
+	callbackFailures int
+}
+
+func NewFailSafeProjection(base Projection, logger zerolog.Logger) *FailSafeProjection {
+	return &FailSafeProjection{
+		base:   base,
+		logger: logger,
+	}
+}
+
+// Fetch implements the Fetch method of the Projection interface
+func (fsp *FailSafeProjection) Fetch() (core.Iterator, error) {
+	it, err := fsp.base.Fetch()
+	if err != nil {
+		fsp.fetchFailures++
+		fsp.logger.Error().Int("fetch_failures", fsp.fetchFailures).Err(err).Msg("failed to fetch events")
+
+		return &nopIterator{}, nil
+	}
+
+	fsp.fetchFailures = 0
+
+	return it, err
+}
+
+type nopIterator struct{}
+
+func (*nopIterator) Next() bool {
+	return false
+}
+
+func (*nopIterator) Value() (core.Event, error) {
+	return core.Event{}, nil
+}
+
+func (*nopIterator) Close() {}
+
+// Callback implements the Callback method of the Projection interface
+func (fsp *FailSafeProjection) Callback(event eventsourcing.Event) error {
+	err := fsp.base.Callback(event)
+	if err != nil {
+		fsp.callbackFailures++
+		fsp.logger.Error().Int("callback_failures", fsp.callbackFailures).Err(err).Msg("failed to handle event")
+
+		return nil
+	}
+
+	fsp.callbackFailures = 0
+
+	return nil
 }
 
 type Projection interface {

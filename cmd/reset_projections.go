@@ -1,8 +1,6 @@
 package cmd
 
 import (
-	"database/sql"
-
 	"github.com/co-defi/api-server/common"
 	"github.com/spf13/cobra"
 )
@@ -13,9 +11,7 @@ var resetProjectionsCmd = &cobra.Command{
 	Short: "Reset all projections",
 	Long:  `This command resets all projections in the database.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		connStr, _ := cmd.Flags().GetString("db")
-
-		db, err := sql.Open("sqlite3", connStr)
+		db, err := prepareDB(cmd.Flags())
 		if err != nil {
 			logger.Fatal().Err(err).Msg("failed to open database")
 		}
