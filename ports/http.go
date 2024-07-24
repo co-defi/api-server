@@ -21,6 +21,7 @@ import (
 // and routes them to the appropriate command and query handlers.
 type HttpServer struct {
 	app    *app.Application
+	authDB *common.AuthenticationDB
 	echo   *echo.Echo
 	logger zerolog.Logger
 }
@@ -28,10 +29,13 @@ type HttpServer struct {
 // NewHttpServer creates a new HTTP server
 func NewHttpServer(a *app.Application) *HttpServer {
 	e := echo.New()
-	e.Use(middleware.CORS())
+	e.Use(middleware.Recover())
 	e.Use(middleware.Logger())
+	e.Use(middleware.CORS())
+
 	s := HttpServer{
 		app:    a,
+		authDB: common.NewAuthenticationDB(),
 		echo:   e,
 		logger: zerolog.Nop(),
 	}
@@ -42,6 +46,9 @@ func NewHttpServer(a *app.Application) *HttpServer {
 }
 
 func (s *HttpServer) registerRoutes() {
+	s.echo.POST("/auth/init", s.initAuth)
+	s.echo.POST("/auth/verify", s.verifyAuth)
+
 	s.echo.GET("/plans", s.getPlans)
 	s.echo.GET("/plan/:id", s.getPlan)
 
@@ -54,6 +61,44 @@ func (s *HttpServer) registerRoutes() {
 	s.echo.POST("/pairs/:id/sign-withdraw", s.signWithdrawal)
 	s.echo.POST("/pairs/:id/submit-lp", s.submitLP)
 	s.echo.POST("/pairs/:id/submit-withdrawal", s.submitWithdrawal)
+}
+
+type initAuthRequest struct {
+	Chain  common.Chain `json:"chain"`
+	PubKey []byte       `json:"pub_key"`
+}
+
+func (s *HttpServer) initAuth(c echo.Context) error {
+	var req initAuthRequest
+	if err := c.Bind(&req); err != nil {
+		return err
+	}
+
+	token, err := s.authDB.Init(req.Chain, []byte(req.PubKey))
+	if err != nil {
+		return err
+	}
+
+	return c.JSON(http.StatusOK, token)
+}
+
+type verifyAuthRequest struct {
+	Id        uuid.UUID `json:"id"`
+	Signature []byte    `json:"signature"`
+}
+
+func (s *HttpServer) verifyAuth(c echo.Context) error {
+	var req verifyAuthRequest
+	if err := c.Bind(&req); err != nil {
+		return err
+	}
+
+	err := s.authDB.Verify(req.Id, req.Signature)
+	if err != nil {
+		return err
+	}
+
+	return c.NoContent(http.StatusOK)
 }
 
 type plan struct {
