@@ -78,8 +78,8 @@ func (pq *PairsQuery) Callback(event eventsourcing.Event) error {
 			return fmt.Errorf("failed to update pair status: %w", err)
 		}
 	case *domain.PairMatched:
-		if err := setSecondParticipantAddress(tx, event, e.ParticipantAddress); err != nil {
-			return fmt.Errorf("failed to set second participant address: %w", err)
+		if err := setPairMatched(tx, event, e); err != nil {
+			return fmt.Errorf("failed to set pair matched: %w", err)
 		}
 	case *domain.WalletAddressConfirmed:
 		if err := updateMultisigWallet(tx, event, e); err != nil {
@@ -181,9 +181,18 @@ func updateStatus(tx executor, event eventsourcing.Event, status domain.PairStat
 	return err
 }
 
-func setSecondParticipantAddress(tx executor, event eventsourcing.Event, address domain.Address) error {
-	_, err := tx.Exec(`update pairs_query set participant_addresses = format('%s,%s', participant_addresses, ?), updated_at = ? where id = ?;`,
-		address, event.Timestamp().Format(time.RFC3339), event.AggregateID())
+func setPairMatched(tx executor, event eventsourcing.Event, e *domain.PairMatched) error {
+	_, err := tx.Exec(`update pairs_query set 
+	participant_addresses = format('%s,%s', participant_addresses, ?), 
+	wallet = jsonb_set(jsonb_set(wallet, '$.encryption_key', ?), '$.hex_chain_code', ?),
+	updated_at = ? 
+	where id = ?;`,
+		e.ParticipantAddress,
+		e.WalletEncryptionKey,
+		e.WalletHexChainCode,
+		event.Timestamp().Format(time.RFC3339),
+		event.AggregateID(),
+	)
 	return err
 }
 

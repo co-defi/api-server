@@ -2,7 +2,10 @@ package commands
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/co-defi/api-server/app/queries"
@@ -22,6 +25,7 @@ type CreateOrMatchPair struct {
 type CreateOrMatchPairHandler common.CommandHandler[CreateOrMatchPair]
 
 type createOrMatchPairHandler struct {
+	mutex      sync.Mutex
 	repo       *eventsourcing.EventRepository
 	plansQuery *queries.PlansQuery
 	pairsQuery *queries.PairsQuery
@@ -40,6 +44,9 @@ var ErrInvalidAssetForPair = common.NewError("invalid_asset_for_pair", "particip
 
 // Handle implements the command handler interface
 func (h *createOrMatchPairHandler) Handle(ctx context.Context, cmd CreateOrMatchPair) (string, error) {
+	h.mutex.Lock()
+	defer h.mutex.Unlock()
+
 	if err := common.Validate(cmd); err != nil {
 		return "", err
 	}
@@ -93,7 +100,20 @@ func (h *createOrMatchPairHandler) Handle(ctx context.Context, cmd CreateOrMatch
 		if err != nil {
 			return "", fmt.Errorf("failed to get pair: %w", err)
 		}
-		p.TrackChange(&p, &domain.PairMatched{ParticipantAddress: cmd.ParticipantAddress})
+
+		encryptionKey, err := getHexEncodedRandomBytes()
+		if err != nil {
+			return "", fmt.Errorf("failed to generate encryption key: %w", err)
+		}
+		hexChainCode, err := getHexEncodedRandomBytes()
+		if err != nil {
+			return "", fmt.Errorf("failed to generate chain code: %w", err)
+		}
+		p.TrackChange(&p, &domain.PairMatched{
+			ParticipantAddress:  cmd.ParticipantAddress,
+			WalletEncryptionKey: encryptionKey,
+			WalletHexChainCode:  hexChainCode,
+		})
 		p.TrackChange(&p, &domain.PairStatusChanged{Status: domain.PairStatusWalletConformation})
 	}
 	if err := h.repo.Save(&p); err != nil {
@@ -119,6 +139,15 @@ func getSecondaryAsset(primaryAsset domain.Asset, assets []domain.Asset) domain.
 		}
 	}
 	return ""
+}
+
+func getHexEncodedRandomBytes() (string, error) {
+	bytes := make([]byte, 32)
+	_, err := rand.Read(bytes)
+	if err != nil {
+		return "", fmt.Errorf("fail to generate random bytes, err: %w", err)
+	}
+	return hex.EncodeToString(bytes), nil
 }
 
 // ConfirmPairWallet is a command to confirm the shared wallet addresses

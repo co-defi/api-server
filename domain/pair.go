@@ -86,17 +86,16 @@ func (p *Pair) applyPairStatusChanged(e *PairStatusChanged) {
 }
 
 func (p *Pair) applyPairMatched(e *PairMatched) {
+	p.Wallet = &MultisigWallet{
+		PublicKeys:    make(map[Asset]string),
+		EncryptionKey: e.WalletEncryptionKey,
+		HexChainCode:  e.WalletHexChainCode,
+	}
 	p.ParticipantsAddress[p.Assets[1]] = e.ParticipantAddress
 }
 
 func (p *Pair) applyWalletAddressConfirmed(e *WalletAddressConfirmed) {
-	if p.Wallet == nil {
-		p.Wallet = &MultisigWallet{
-			PublicKeys: make(map[Asset]string),
-			Addresses:  e.WalletAddresses,
-		}
-	}
-
+	p.Wallet.Addresses = e.WalletAddresses
 	p.Wallet.PublicKeys[e.ParticipantAsset] = e.PublicKey
 }
 
@@ -188,9 +187,10 @@ type Address string
 
 // MultisigWallet is the shared wallet for the pair of participants
 type MultisigWallet struct {
-	PublicKeys map[Asset]string  `json:"public_keys,omitempty"`
-	Addresses  map[Asset]Address `json:"addresses,omitempty"`
-	// Other fields for Vaultisig internal stuff...
+	PublicKeys    map[Asset]string  `json:"public_keys,omitempty"`
+	Addresses     map[Asset]Address `json:"addresses,omitempty"`
+	EncryptionKey string            `json:"encryption_key,omitempty"`
+	HexChainCode  string            `json:"hex_chain_code,omitempty"`
 }
 
 func (w *MultisigWallet) AreAddressesEqual(addresses map[Asset]Address) bool {
@@ -232,7 +232,9 @@ type PairStatusChanged struct {
 
 // PairMatched is the event for matching a pair with another participant.
 type PairMatched struct {
-	ParticipantAddress Address `json:"participant_address,omitempty"`
+	ParticipantAddress  Address `json:"participant_address,omitempty"`
+	WalletEncryptionKey string  `json:"wallet_encryption_key,omitempty"`
+	WalletHexChainCode  string  `json:"wallet_hex_chain_code,omitempty"`
 }
 
 // WalletAddressConfirmed is the event for confirming the shared wallet's addresses by the participants.
