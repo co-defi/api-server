@@ -147,6 +147,28 @@ func (p Pair) HasAsset(asset Asset) bool {
 	return false
 }
 
+// HasParticipant checks if the pair has the participant
+func (p Pair) HasParticipant(address Address) bool {
+	for _, addr := range p.ParticipantsAddress {
+		if addr == address {
+			return true
+		}
+	}
+
+	return false
+}
+
+// AssetOfParticipant returns the asset of the participant
+func (p Pair) AssetOfParticipant(address Address) Asset {
+	for asset, addr := range p.ParticipantsAddress {
+		if addr == address {
+			return asset
+		}
+	}
+
+	return ""
+}
+
 // HasAssurancesForAsset checks if the pair has assurances for the asset
 func (p Pair) HasAssurancesForAsset(asset Asset) bool {
 	_, ok := p.Assurances[asset]
@@ -180,10 +202,10 @@ const (
 )
 
 // Asset is the type for the assets in the pair
-type Asset string
+type Asset = string
 
 // Address is the type for the participant's address
-type Address string
+type Address = string
 
 // MultisigWallet is the shared wallet for the pair of participants
 type MultisigWallet struct {
@@ -211,7 +233,7 @@ type SignedTx struct {
 }
 
 // TxHash is the type for the transaction hash
-type TxHash string
+type TxHash = string
 
 // PairCreated is the event for creating a new pair for the first time.
 type PairCreated struct {

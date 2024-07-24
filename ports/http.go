@@ -11,6 +11,7 @@ import (
 
 	"github.com/co-defi/api-server/app"
 	"github.com/co-defi/api-server/app/commands"
+	"github.com/co-defi/api-server/app/queries"
 	"github.com/co-defi/api-server/common"
 	"github.com/co-defi/api-server/domain"
 	"github.com/labstack/echo/v4"
@@ -161,10 +162,11 @@ func (s *HttpServer) getPlan(c echo.Context) error {
 	})
 }
 
+var ErrForbidden = common.NewError("forbidden", "forbidden content access")
+
 type createOrMatchPairRequest struct {
-	PlanId             string         `json:"plan_id"`
-	ParticipantAsset   domain.Asset   `json:"participant_asset"`
-	ParticipantAddress domain.Address `json:"participant_address"`
+	PlanId           string       `json:"plan_id"`
+	ParticipantAsset domain.Asset `json:"participant_asset"`
 }
 
 type createOrMatchPairResponse struct {
@@ -177,10 +179,18 @@ func (s *HttpServer) createOrMatchPair(c echo.Context) error {
 		return err
 	}
 
+	auth, err := s.authDB.ExtractTokenFromHttp(c.Request())
+	if err != nil {
+		return err
+	}
+	if !strings.HasPrefix(req.ParticipantAsset, auth.Chain) {
+		return ErrForbidden
+	}
+
 	pairId, err := s.app.Commands.CreateOrMatchPair.Handle(c.Request().Context(), commands.CreateOrMatchPair{
 		PlanId:             req.PlanId,
 		ParticipantAsset:   req.ParticipantAsset,
-		ParticipantAddress: req.ParticipantAddress,
+		ParticipantAddress: auth.Address,
 	})
 	if err != nil {
 		return err
@@ -195,21 +205,38 @@ func (s *HttpServer) getPair(c echo.Context) error {
 		return err
 	}
 
+	auth, err := s.authDB.ExtractTokenFromHttp(c.Request())
+	if err != nil {
+		return err
+	}
+	if !pairHasAddress(pair, auth.Address) {
+		return ErrForbidden
+	}
+
 	return c.JSON(http.StatusOK, pair)
 }
 
-var (
-	ErrInvalidAddress = common.NewError("invalid_address", "address is required")
-)
+func pairHasAddress(pair *queries.Pair, address string) bool {
+	for _, p := range pair.ParticipantAddresses {
+		if p == address {
+			return true
+		}
+	}
+
+	return false
+}
+
+var ErrInvalidAddress = common.NewError("invalid_address", "address is required")
 
 func (s *HttpServer) getPairs(c echo.Context) error {
 	planId := c.QueryParam("plan_id")
 	if err := uuid.Validate(planId); err != nil {
 		return ErrInvalidPlanId.IncludeMeta(map[string]interface{}{"plan_id": err})
 	}
-	address := domain.Address(c.QueryParam("address"))
-	if address == "" {
-		return ErrInvalidAddress
+
+	auth, err := s.authDB.ExtractTokenFromHttp(c.Request())
+	if err != nil {
+		return err
 	}
 
 	plan, err := s.app.Queries.Plans.Get(c.Request().Context(), planId)
@@ -222,7 +249,7 @@ func (s *HttpServer) getPairs(c echo.Context) error {
 		nil,
 		plan.Assets,
 		false,
-		[]domain.Address{address},
+		[]domain.Address{auth.Address},
 		&plan.Quantum,
 		&plan.InvestingPeriod,
 		&plan.Security,
@@ -237,7 +264,6 @@ func (s *HttpServer) getPairs(c echo.Context) error {
 }
 
 type confirmPairWalletRequest struct {
-	ParticipantAsset     domain.Asset                    `json:"participant_asset,omitempty"`
 	ParticipantPublicKey string                          `json:"participant_public_key,omitempty"`
 	WalletAddresses      map[domain.Asset]domain.Address `json:"wallet_addresses,omitempty"`
 }
@@ -248,9 +274,14 @@ func (s *HttpServer) confirmPairWallet(c echo.Context) error {
 		return err
 	}
 
-	_, err := s.app.Commands.ConfirmPairWallet.Handle(c.Request().Context(), commands.ConfirmPairWallet{
+	auth, err := s.authDB.ExtractTokenFromHttp(c.Request())
+	if err != nil {
+		return err
+	}
+
+	_, err = s.app.Commands.ConfirmPairWallet.Handle(c.Request().Context(), commands.ConfirmPairWallet{
 		PairId:               c.Param("id"),
-		ParticipantAsset:     req.ParticipantAsset,
+		ParticipantAddress:   auth.Address,
 		ParticipantPublicKey: req.ParticipantPublicKey,
 		WalletAddresses:      req.WalletAddresses,
 	})
@@ -262,8 +293,8 @@ func (s *HttpServer) confirmPairWallet(c echo.Context) error {
 }
 
 type setPairAssurancesRequest struct {
-	ParticipantAsset domain.Asset      `json:"participant_asset,omitempty"`
-	Assurances       []domain.SignedTx `json:"assurances,omitempty"`
+	Asset      domain.Asset      `json:"asset,omitempty"`
+	Assurances []domain.SignedTx `json:"assurances,omitempty"`
 }
 
 func (s *HttpServer) setPairAssurances(c echo.Context) error {
@@ -272,10 +303,16 @@ func (s *HttpServer) setPairAssurances(c echo.Context) error {
 		return err
 	}
 
-	_, err := s.app.Commands.SetPairAssurances.Handle(c.Request().Context(), commands.SetPairAssurances{
-		PairId:           c.Param("id"),
-		ParticipantAsset: req.ParticipantAsset,
-		Assurances:       req.Assurances,
+	auth, err := s.authDB.ExtractTokenFromHttp(c.Request())
+	if err != nil {
+		return err
+	}
+
+	_, err = s.app.Commands.SetPairAssurances.Handle(c.Request().Context(), commands.SetPairAssurances{
+		PairId:             c.Param("id"),
+		ParticipantAddress: auth.Address,
+		Asset:              req.Asset,
+		Assurances:         req.Assurances,
 	})
 	if err != nil {
 		return err
@@ -295,10 +332,16 @@ func (s *HttpServer) addDeposit(c echo.Context) error {
 		return err
 	}
 
-	_, err := s.app.Commands.AddDeposit.Handle(c.Request().Context(), commands.AddDeposit{
-		PairId: c.Param("id"),
-		Asset:  req.Asset,
-		TxHash: req.TxHash,
+	auth, err := s.authDB.ExtractTokenFromHttp(c.Request())
+	if err != nil {
+		return err
+	}
+
+	_, err = s.app.Commands.AddDeposit.Handle(c.Request().Context(), commands.AddDeposit{
+		PairId:             c.Param("id"),
+		ParticipantAddress: auth.Address,
+		Asset:              req.Asset,
+		TxHash:             req.TxHash,
 	})
 	if err != nil {
 		return err
@@ -317,9 +360,15 @@ func (s *HttpServer) signWithdrawal(c echo.Context) error {
 		return err
 	}
 
-	_, err := s.app.Commands.SignWithdrawal.Handle(c.Request().Context(), commands.SignWithdrawal{
-		PairId: c.Param("id"),
-		Tx:     req.Tx,
+	auth, err := s.authDB.ExtractTokenFromHttp(c.Request())
+	if err != nil {
+		return err
+	}
+
+	_, err = s.app.Commands.SignWithdrawal.Handle(c.Request().Context(), commands.SignWithdrawal{
+		PairId:             c.Param("id"),
+		ParticipantAddress: auth.Address,
+		Tx:                 req.Tx,
 	})
 	if err != nil {
 		return err
@@ -339,10 +388,16 @@ func (s *HttpServer) submitLP(c echo.Context) error {
 		return err
 	}
 
-	_, err := s.app.Commands.SubmitLP.Handle(c.Request().Context(), commands.SubmitLP{
-		PairId: c.Param("id"),
-		Asset:  req.Asset,
-		TxHash: req.TxHash,
+	auth, err := s.authDB.ExtractTokenFromHttp(c.Request())
+	if err != nil {
+		return err
+	}
+
+	_, err = s.app.Commands.SubmitLP.Handle(c.Request().Context(), commands.SubmitLP{
+		PairId:             c.Param("id"),
+		ParticipantAddress: auth.Address,
+		Asset:              req.Asset,
+		TxHash:             req.TxHash,
 	})
 	if err != nil {
 		return err
@@ -361,9 +416,15 @@ func (s *HttpServer) submitWithdrawal(c echo.Context) error {
 		return err
 	}
 
-	_, err := s.app.Commands.SubmitWithdrawal.Handle(c.Request().Context(), commands.SubmitWithdrawal{
-		PairId: c.Param("id"),
-		TxHash: req.TxHash,
+	auth, err := s.authDB.ExtractTokenFromHttp(c.Request())
+	if err != nil {
+		return err
+	}
+
+	_, err = s.app.Commands.SubmitWithdrawal.Handle(c.Request().Context(), commands.SubmitWithdrawal{
+		PairId:             c.Param("id"),
+		ParticipantAddress: &auth.Address,
+		TxHash:             req.TxHash,
 	})
 	if err != nil {
 		return err
@@ -398,6 +459,10 @@ func convertCodeToHttpStatus(code string) int {
 		return http.StatusBadRequest
 	case strings.Contains(code, "already"):
 		return http.StatusBadRequest
+	case strings.Contains(code, "auth"):
+		return http.StatusUnauthorized
+	case strings.Contains(code, "forbidden"):
+		return http.StatusForbidden
 	default:
 		return http.StatusInternalServerError
 	}

@@ -153,7 +153,7 @@ func getHexEncodedRandomBytes() (string, error) {
 // ConfirmPairWallet is a command to confirm the shared wallet addresses
 type ConfirmPairWallet struct {
 	PairId               string                          `json:"pair_id" validate:"required,uuid4"`
-	ParticipantAsset     domain.Asset                    `json:"participant_asset" validate:"required"`
+	ParticipantAddress   domain.Address                  `json:"participant_address" validate:"required"`
 	ParticipantPublicKey string                          `json:"participant_public_key" validate:"required"`
 	WalletAddresses      map[domain.Asset]domain.Address `json:"wallet_addresses" validate:"required,len=2"`
 }
@@ -172,9 +172,10 @@ func NewConfirmPairWalletHandler(repo *eventsourcing.EventRepository) *confirmPa
 }
 
 var (
-	ErrPairNotFound           = common.NewError("pair_not_found", "pair not found")
-	ErrInvalidPairStatus      = common.NewError("invalid_pair_status", "pair status is not valid for this operation")
-	ErrInvalidWalletAddresses = common.NewError("invalid_wallet_addresses", "wallet addresses are not the same for both participants")
+	ErrPairNotFound            = common.NewError("pair_not_found", "pair not found")
+	ErrInvalidPairStatus       = common.NewError("invalid_pair_status", "pair status is not valid for this operation")
+	ErrInvalidWalletAddresses  = common.NewError("invalid_wallet_addresses", "wallet addresses are not the same for both participants")
+	ErrForbiddenPairForAddress = common.NewError("forbidden_pair_for_address", "pair is not allowed for the address")
 )
 
 // Handle implements the command handler interface
@@ -195,8 +196,9 @@ func (h *confirmPairWalletHandler) Handle(ctx context.Context, cmd ConfirmPairWa
 		return "", ErrInvalidPairStatus
 	}
 
-	if !p.HasAsset(cmd.ParticipantAsset) {
-		return "", ErrInvalidAssetForPair
+	participantAsset := p.AssetOfParticipant(cmd.ParticipantAddress)
+	if participantAsset == "" {
+		return "", ErrForbiddenPairForAddress
 	}
 	for asset := range cmd.WalletAddresses {
 		if !p.HasAsset(asset) {
@@ -210,7 +212,7 @@ func (h *confirmPairWalletHandler) Handle(ctx context.Context, cmd ConfirmPairWa
 	}
 
 	p.TrackChange(&p, &domain.WalletAddressConfirmed{
-		ParticipantAsset: cmd.ParticipantAsset,
+		ParticipantAsset: participantAsset,
 		PublicKey:        cmd.ParticipantPublicKey,
 		WalletAddresses:  cmd.WalletAddresses,
 	})
@@ -227,9 +229,10 @@ func (h *confirmPairWalletHandler) Handle(ctx context.Context, cmd ConfirmPairWa
 
 // SetPairAssurances is a command to set assurances for a pair
 type SetPairAssurances struct {
-	PairId           string            `json:"pair_id" validate:"required,uuid4"`
-	ParticipantAsset domain.Asset      `json:"participant_asset" validate:"required"`
-	Assurances       []domain.SignedTx `json:"assurances" validate:"required"`
+	PairId             string            `json:"pair_id" validate:"required,uuid4"`
+	ParticipantAddress domain.Address    `json:"participant_address" validate:"required"`
+	Asset              domain.Asset      `json:"asset" validate:"required"`
+	Assurances         []domain.SignedTx `json:"assurances" validate:"required"`
 }
 
 // SetPairAssurancesHandler is a command handler for SetPairAssurances
@@ -252,7 +255,7 @@ func (h *setPairAssurancesHandler) Handle(ctx context.Context, cmd SetPairAssura
 		return "", err
 	}
 
-	if err := validateAssurances(cmd.ParticipantAsset, cmd.Assurances); err != nil {
+	if err := validateAssurances(cmd.Asset, cmd.Assurances); err != nil {
 		return "", err
 	}
 
@@ -268,17 +271,17 @@ func (h *setPairAssurancesHandler) Handle(ctx context.Context, cmd SetPairAssura
 		return "", ErrInvalidPairStatus
 	}
 
-	if !p.HasAsset(cmd.ParticipantAsset) {
-		return "", ErrInvalidAssetForPair
+	if !p.HasParticipant(cmd.ParticipantAddress) {
+		return "", ErrForbiddenPairForAddress
 	}
 
-	if p.HasAssurancesForAsset(cmd.ParticipantAsset) {
+	if p.HasAssurancesForAsset(cmd.Asset) {
 		return "", ErrAlreadySetAssurances
 	}
 
 	for _, assurance := range cmd.Assurances {
 		p.TrackChange(&p, &domain.AssetAssuranceSigned{
-			Asset: cmd.ParticipantAsset,
+			Asset: cmd.Asset,
 			Tx:    assurance,
 		})
 	}
@@ -325,9 +328,10 @@ func hasAssuranceWithNonce(assurances []domain.SignedTx, nonce int) bool {
 
 // AddDeposit is a command to add a deposit to a pair
 type AddDeposit struct {
-	PairId string        `json:"pair_id" validate:"required,uuid4"`
-	Asset  domain.Asset  `json:"asset" validate:"required"`
-	TxHash domain.TxHash `json:"tx_hash" validate:"required"`
+	PairId             string         `json:"pair_id" validate:"required,uuid4"`
+	ParticipantAddress domain.Address `json:"participant_address" validate:"required"`
+	Asset              domain.Asset   `json:"asset" validate:"required"`
+	TxHash             domain.TxHash  `json:"tx_hash" validate:"required"`
 }
 
 // AddDepositHandler is a command handler for AddDeposit
@@ -362,6 +366,10 @@ func (h *addDepositHandler) Handle(ctx context.Context, cmd AddDeposit) (string,
 		return "", ErrInvalidPairStatus
 	}
 
+	if !p.HasParticipant(cmd.ParticipantAddress) {
+		return "", ErrForbiddenPairForAddress
+	}
+
 	if !p.HasAsset(cmd.Asset) {
 		return "", ErrInvalidAssetForPair
 	}
@@ -390,8 +398,9 @@ func (h *addDepositHandler) Handle(ctx context.Context, cmd AddDeposit) (string,
 
 // SignWithdrawal is a command to sign a withdrawal transaction
 type SignWithdrawal struct {
-	PairId string          `json:"pair_id" validate:"required,uuid4"`
-	Tx     domain.SignedTx `json:"tx" validate:"required"`
+	PairId             string          `json:"pair_id" validate:"required,uuid4"`
+	ParticipantAddress domain.Address  `json:"participant_address" validate:"required"`
+	Tx                 domain.SignedTx `json:"tx" validate:"required"`
 }
 
 // SignWithdrawalHandler is a command handler for SignWithdrawal
@@ -423,6 +432,10 @@ func (h *signWithdrawalHandler) Handle(ctx context.Context, cmd SignWithdrawal) 
 		return "", ErrInvalidPairStatus
 	}
 
+	if !p.HasParticipant(cmd.ParticipantAddress) {
+		return "", ErrForbiddenPairForAddress
+	}
+
 	p.TrackChange(&p, &domain.WithdrawTxSigned{Tx: cmd.Tx})
 	p.TrackChange(&p, &domain.PairStatusChanged{Status: domain.PairStatusLP})
 
@@ -435,9 +448,10 @@ func (h *signWithdrawalHandler) Handle(ctx context.Context, cmd SignWithdrawal) 
 
 // SubmitLP is a command to update the pair with LP transactions of both assets
 type SubmitLP struct {
-	PairId string        `json:"pair_id" validate:"required,uuid4"`
-	Asset  domain.Asset  `json:"asset" validate:"required"`
-	TxHash domain.TxHash `json:"tx_hash" validate:"required"`
+	PairId             string         `json:"pair_id" validate:"required,uuid4"`
+	ParticipantAddress domain.Address `json:"participant_address" validate:"required"`
+	Asset              domain.Asset   `json:"asset" validate:"required"`
+	TxHash             domain.TxHash  `json:"tx_hash" validate:"required"`
 }
 
 // SubmitLPHandler is a command handler for SubmitLP
@@ -474,6 +488,10 @@ func (h *submitLPHandler) Handle(ctx context.Context, cmd SubmitLP) (string, err
 		return "", ErrInvalidPairStatus
 	}
 
+	if !p.HasParticipant(cmd.ParticipantAddress) {
+		return "", ErrForbiddenPairForAddress
+	}
+
 	if !p.HasAsset(cmd.Asset) {
 		return "", ErrInvalidAssetForPair
 	}
@@ -497,8 +515,9 @@ func (h *submitLPHandler) Handle(ctx context.Context, cmd SubmitLP) (string, err
 
 // SubmitWithdrawal is a command to submit a withdrawal transaction
 type SubmitWithdrawal struct {
-	PairId string        `json:"pair_id" validate:"required,uuid4"`
-	TxHash domain.TxHash `json:"tx_hash" validate:"required"`
+	PairId             string          `json:"pair_id" validate:"required,uuid4"`
+	ParticipantAddress *domain.Address `json:"participant_address" validate:"-"`
+	TxHash             domain.TxHash   `json:"tx_hash" validate:"required"`
 }
 
 // SubmitWithdrawalHandler is a command handler for SubmitWithdrawal
@@ -529,6 +548,10 @@ func (h *submitWithdrawalHandler) Handle(ctx context.Context, cmd SubmitWithdraw
 
 	if p.Status != domain.PairStatusLP {
 		return "", ErrInvalidPairStatus
+	}
+
+	if cmd.ParticipantAddress != nil && !p.HasParticipant(*cmd.ParticipantAddress) {
+		return "", ErrForbiddenPairForAddress
 	}
 
 	p.TrackChange(&p, &domain.Withdrawn{TxHash: cmd.TxHash})
