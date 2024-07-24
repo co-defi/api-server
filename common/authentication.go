@@ -5,9 +5,9 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"log"
 	"time"
 
 	"github.com/allegro/bigcache/v3"
@@ -89,8 +89,8 @@ func (a *AuthenticationDB) Get(id uuid.UUID) (Token, error) {
 type Chain string
 
 const (
-	ChainEthereum  Chain = "ethereum"
-	ChainThorchain Chain = "thorchain"
+	ChainEthereum  Chain = "ETH"
+	ChainThorchain Chain = "THOR"
 )
 
 // Token represents an authentication token
@@ -99,8 +99,9 @@ type Token struct {
 	Chain     Chain     `json:"chain,omitempty"`
 	PublicKey []byte    `json:"public_key,omitempty"`
 	Address   string    `json:"address,omitempty"`
-	IssuedAt  time.Time `json:"issued_at,omitempty"`
-	Challenge []byte    `json:"challenge,omitempty"`
+	IssuedAt  int64     `json:"issued_at,omitempty"`
+	ExpiresAt int64     `json:"expires_at,omitempty"`
+	Challenge string    `json:"challenge,omitempty"`
 	Verified  bool      `json:"verified,omitempty"`
 }
 
@@ -115,8 +116,9 @@ func newToken(chain Chain, pubkey []byte) (Token, error) {
 		Chain:     chain,
 		PublicKey: pubkey,
 		Address:   address,
-		IssuedAt:  time.Now(),
-		Challenge: getRandomChallenge(),
+		IssuedAt:  time.Now().Unix(),
+		ExpiresAt: time.Now().Add(tokensTTL).Unix(),
+		Challenge: fmt.Sprintf("Authentication challenge: %s", base64.StdEncoding.EncodeToString(getRandomChallenge())),
 		Verified:  false,
 	}, nil
 }
@@ -195,11 +197,13 @@ func (t Token) Bytes() []byte {
 
 // VerifyChallenge verifies the challenge
 func (t Token) VerifyChallenge(signature []byte) error {
-	hash := sha3.NewLegacyKeccak256().Sum(t.Challenge)
+	hash := sha3.NewLegacyKeccak256()
+	hash.Write([]byte(t.Challenge))
+	buf := hash.Sum(nil)
 
-	sigPublicKey, err := ethcrypto.Ecrecover(hash, signature)
+	sigPublicKey, err := ethcrypto.Ecrecover(buf, signature)
 	if err != nil {
-		log.Fatal(err)
+		return fmt.Errorf("failed to recover public key: %w", err)
 	}
 
 	if !bytes.Equal(sigPublicKey, t.PublicKey) {
@@ -207,7 +211,7 @@ func (t Token) VerifyChallenge(signature []byte) error {
 	}
 
 	signatureNoRecoverID := signature[:len(signature)-1] // remove recovery id
-	if !ethcrypto.VerifySignature(t.PublicKey, hash, signatureNoRecoverID) {
+	if !ethcrypto.VerifySignature(t.PublicKey, buf, signatureNoRecoverID) {
 		return fmt.Errorf("invalid signature")
 	}
 
