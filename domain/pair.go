@@ -257,6 +257,7 @@ type PairMatched struct {
 	ParticipantAddress  Address `json:"participant_address,omitempty"`
 	WalletEncryptionKey string  `json:"wallet_encryption_key,omitempty"`
 	WalletHexChainCode  string  `json:"wallet_hex_chain_code,omitempty"`
+	KeygenMsg           string  `json:"keygen_msg,omitempty"`
 }
 
 // WalletAddressConfirmed is the event for confirming the shared wallet's addresses by the participants.

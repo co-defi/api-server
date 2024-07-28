@@ -1,8 +1,11 @@
 package commands
 
 import (
+	"bytes"
+	"compress/flate"
 	"context"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"sync"
@@ -12,6 +15,8 @@ import (
 	"github.com/co-defi/api-server/common"
 	"github.com/co-defi/api-server/domain"
 	"github.com/hallgren/eventsourcing"
+	keygenTypes "github.com/vultisig/commondata/go/vultisig/keygen/v1"
+	"google.golang.org/protobuf/proto"
 )
 
 // CreateOrMatchPair is a command to create a new pair or match an existing pair.
@@ -109,10 +114,40 @@ func (h *createOrMatchPairHandler) Handle(ctx context.Context, cmd CreateOrMatch
 		if err != nil {
 			return "", fmt.Errorf("failed to generate chain code: %w", err)
 		}
+
+		keygenMsg := &keygenTypes.KeygenMessage{
+			SessionId:        pairs[0].Id,
+			HexChainCode:     hexChainCode,
+			ServiceName:      "VultiSignerApp",
+			EncryptionKeyHex: encryptionKey,
+			UseVultisigRelay: true,
+			VaultName:        pairs[0].Id,
+		}
+
+		serializedData, err := proto.Marshal(keygenMsg)
+		if err != nil {
+			return "", fmt.Errorf("fail to Marshal keygenMsg, err: %w", err)
+		}
+
+		var buf bytes.Buffer
+		writer, err := flate.NewWriter(&buf, 5)
+		if err != nil {
+			return "", fmt.Errorf("flate.NewWriter failed, err: %w", err)
+		}
+		_, err = writer.Write(serializedData)
+		if err != nil {
+			return "", fmt.Errorf("writer.Write failed, err: %w", err)
+		}
+		err = writer.Close()
+		if err != nil {
+			return "", fmt.Errorf("writer.Close failed, err: %w", err)
+		}
+
 		p.TrackChange(&p, &domain.PairMatched{
 			ParticipantAddress:  cmd.ParticipantAddress,
 			WalletEncryptionKey: encryptionKey,
 			WalletHexChainCode:  hexChainCode,
+			KeygenMsg:           base64.StdEncoding.EncodeToString(buf.Bytes()),
 		})
 		p.TrackChange(&p, &domain.PairStatusChanged{Status: domain.PairStatusWalletConformation})
 	}
