@@ -1,7 +1,6 @@
 package common
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -14,11 +13,10 @@ import (
 
 	"github.com/allegro/bigcache/v3"
 	"github.com/cosmos/btcutil/bech32"
-	ethcommon "github.com/ethereum/go-ethereum/common"
+	ethaccounts "github.com/ethereum/go-ethereum/accounts"
 	ethcrypto "github.com/ethereum/go-ethereum/crypto"
 	"github.com/google/uuid"
 	"golang.org/x/crypto/ripemd160"
-	"golang.org/x/crypto/sha3"
 )
 
 const tokensTTL = 1 * time.Hour
@@ -36,8 +34,8 @@ func NewAuthenticationDB() *AuthenticationDB {
 }
 
 // Init initializes an authentication token
-func (a *AuthenticationDB) Init(chain Chain, pubkey []byte) (Token, error) {
-	token, err := newToken(chain, pubkey)
+func (a *AuthenticationDB) Init(chain Chain, address string) (Token, error) {
+	token, err := newToken(chain, address)
 	if err != nil {
 		return Token{}, err
 	}
@@ -102,18 +100,13 @@ const (
 
 // Token represents an authentication token
 type Token struct {
-	Id    uuid.UUID `json:"id,omitempty"`
-	Chain Chain     `json:"chain,omitempty"`
-	// Public key of secp256k1 (Cosmos secp256r1 is not supported)
-	// Both Compressed (with 0x2 and 0x3 prefixes) and Uncompressed (with 0x4 prefix) are supported
-	// But the public key is kept in uncompressed form
-	PublicKey []byte `json:"public_key,omitempty"`
-	// Address is the address derived from the public key and depends on the chain
-	Address   string `json:"address,omitempty"`
-	IssuedAt  int64  `json:"issued_at,omitempty"`
-	ExpiresAt int64  `json:"expires_at,omitempty"`
-	Challenge string `json:"challenge,omitempty"`
-	Verified  bool   `json:"verified,omitempty"`
+	Id        uuid.UUID `json:"id,omitempty"`
+	Chain     Chain     `json:"chain,omitempty"`
+	Address   string    `json:"address,omitempty"`
+	IssuedAt  int64     `json:"issued_at,omitempty"`
+	ExpiresAt int64     `json:"expires_at,omitempty"`
+	Challenge string    `json:"challenge,omitempty"`
+	Verified  bool      `json:"verified,omitempty"`
 }
 
 var (
@@ -156,94 +149,16 @@ func (db *AuthenticationDB) ExtractTokenFromHttp(r *http.Request) (Token, error)
 
 var ErrInvalidPublicKey = NewError("invalid_public_key", "failed to generate address for this pair of chain and public key")
 
-func newToken(chain Chain, pubkey []byte) (Token, error) {
-	pubkey, err := normalizePubKey(pubkey)
-	if err != nil {
-		return Token{}, ErrInvalidPublicKey.IncludeMeta(map[string]interface{}{"error": err.Error()})
-	}
-
-	address, err := addressFromPubKey(chain, pubkey)
-	if err != nil {
-		return Token{}, ErrInvalidPublicKey.IncludeMeta(map[string]interface{}{"error": err.Error()})
-	}
-
+func newToken(chain Chain, address string) (Token, error) {
 	return Token{
 		Id:        uuid.New(),
 		Chain:     chain,
-		PublicKey: pubkey,
 		Address:   address,
 		IssuedAt:  time.Now().Unix(),
 		ExpiresAt: time.Now().Add(tokensTTL).Unix(),
-		Challenge: fmt.Sprintf("Authentication challenge: %s", base64.StdEncoding.EncodeToString(getRandomChallenge())),
+		Challenge: fmt.Sprintf("Authentication Challenge: %s", base64.StdEncoding.EncodeToString(getRandomChallenge())),
 		Verified:  false,
 	}, nil
-}
-
-// normalizePubKey normalizes the public key to uncompressed form
-func normalizePubKey(pubkey []byte) ([]byte, error) {
-	if len(pubkey) == 33 {
-		if pubkey[0] == 0x02 || pubkey[0] == 0x03 {
-			pk, err := ethcrypto.DecompressPubkey(pubkey)
-			if err != nil {
-				return nil, err
-			}
-			return ethcrypto.FromECDSAPub(pk), nil
-		}
-	} else if len(pubkey) == 65 {
-		if pubkey[0] == 0x04 {
-			return pubkey, nil
-		}
-	}
-
-	return nil, fmt.Errorf("invalid public key")
-}
-
-func addressFromPubKey(chain Chain, pubkey []byte) (string, error) {
-	switch chain {
-	case ChainEthereum:
-		return generateEthereumAddress(pubkey)
-	case ChainThorchain:
-		return generateThorchainAddress(pubkey)
-	default:
-		return "", fmt.Errorf("unsupported chain: %s", chain)
-	}
-}
-
-func generateEthereumAddress(pubkey []byte) (string, error) {
-	hash := sha3.NewLegacyKeccak256()
-	hash.Write(pubkey[1:]) // remove EC prefix 04
-	buf := hash.Sum(nil)
-	address := buf[12:]
-
-	return ethcommon.BytesToAddress(address).String(), nil
-}
-
-const thorchainBech32Prefix = "thor"
-
-func generateThorchainAddress(pubkey []byte) (string, error) {
-	return generateBech32Address(thorchainBech32Prefix, pubkey)
-}
-
-func generateBech32Address(hrp string, pubkey []byte) (string, error) {
-	pk, err := ethcrypto.UnmarshalPubkey(pubkey)
-	if err != nil {
-		return "", err
-	}
-	compressedPubKey := ethcrypto.CompressPubkey(pk)
-
-	// Hash pubKeyBytes as: RIPEMD160(SHA256(public_key_bytes))
-	sha256Hash := sha256.Sum256(compressedPubKey)
-	ripemd160hash := ripemd160.New()
-	ripemd160hash.Write(sha256Hash[:])
-	addressBytes := ripemd160hash.Sum(nil)
-
-	// Convert addressBytes into a bech32 string
-	address, err := toBech32(hrp, addressBytes)
-	if err != nil {
-		return "", err
-	}
-
-	return address, nil
 }
 
 func toBech32(addrPrefix string, addrBytes []byte) (string, error) {
@@ -282,23 +197,61 @@ func (t Token) Bytes() []byte {
 
 // VerifyChallenge verifies the challenge
 func (t Token) VerifyChallenge(signature []byte) error {
-	hash := sha3.NewLegacyKeccak256()
-	hash.Write([]byte(t.Challenge))
-	buf := hash.Sum(nil)
+	switch t.Chain {
+	case ChainEthereum:
+		return verifyEthereumChallenge(t.Address, t.Challenge, signature)
+	case ChainThorchain:
+		// TODO: implement thorchain signature verification
+		return nil
+	}
 
-	sigPublicKey, err := ethcrypto.Ecrecover(buf, signature)
+	return nil
+}
+
+func verifyEthereumChallenge(address, challenge string, signature []byte) error {
+	hash := ethaccounts.TextHash([]byte(challenge))
+	signature[ethcrypto.RecoveryIDOffset] -= 27 // transform V from 27/28 to 0/1
+	pub, err := ethcrypto.SigToPub(hash, signature)
 	if err != nil {
 		return fmt.Errorf("failed to recover public key: %w", err)
 	}
 
-	if !bytes.Equal(sigPublicKey, t.PublicKey) {
-		return fmt.Errorf("invalid signature")
+	if address != ethcrypto.PubkeyToAddress(*pub).String() {
+		return fmt.Errorf("invalid public key address")
 	}
 
 	signatureNoRecoverID := signature[:len(signature)-1] // remove recovery id
-	if !ethcrypto.VerifySignature(t.PublicKey, buf, signatureNoRecoverID) {
+	if !ethcrypto.VerifySignature(ethcrypto.FromECDSAPub(pub), hash, signatureNoRecoverID) {
 		return fmt.Errorf("invalid signature")
 	}
 
 	return nil
+}
+
+const thorchainBech32Prefix = "thor"
+
+func generateThorchainAddress(pubkey []byte) (string, error) {
+	return generateBech32Address(thorchainBech32Prefix, pubkey)
+}
+
+func generateBech32Address(hrp string, pubkey []byte) (string, error) {
+	pk, err := ethcrypto.UnmarshalPubkey(pubkey)
+	if err != nil {
+		return "", err
+	}
+	compressedPubKey := ethcrypto.CompressPubkey(pk)
+
+	// Hash pubKeyBytes as: RIPEMD160(SHA256(public_key_bytes))
+	sha256Hash := sha256.Sum256(compressedPubKey)
+	ripemd160hash := ripemd160.New()
+	ripemd160hash.Write(sha256Hash[:])
+	addressBytes := ripemd160hash.Sum(nil)
+
+	// Convert addressBytes into a bech32 string
+	address, err := toBech32(hrp, addressBytes)
+	if err != nil {
+		return "", err
+	}
+
+	return address, nil
 }
